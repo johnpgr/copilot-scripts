@@ -1,8 +1,8 @@
-import { mkdir } from 'fs/promises';
-import path from 'path';
+import { mkdir } from "fs/promises";
+import path from "path";
 
-const CONFIG_DIR = path.join(process.env.HOME || '', '.config/copilot-scripts');
-const TOKEN_PATH = path.join(CONFIG_DIR, 'tokens.json');
+const CONFIG_DIR = path.join(process.env.HOME || "", ".config/copilot-scripts");
+const TOKEN_PATH = path.join(CONFIG_DIR, "tokens.json");
 
 export interface TokenCache {
   oauth_token?: string;
@@ -22,7 +22,10 @@ export async function loadCachedToken(): Promise<TokenCache | null> {
   }
 }
 
-export async function saveBearerToken(bearer: { token: string; expires_at: number }): Promise<void> {
+export async function saveBearerToken(bearer: {
+  token: string;
+  expires_at: number;
+}): Promise<void> {
   await ensureConfigDir();
 
   const payload: TokenCache = {

@@ -1,38 +1,52 @@
-export async function* parseSSE(response: Response): AsyncGenerator<any, void, unknown> {
+import * as Stream from "effect/Stream";
+import { ParseError } from "../errors";
+
+export async function* parseSSE(
+  response: Response,
+): AsyncGenerator<any, void, unknown> {
   if (!response.body) {
-    throw new Error('Missing response body for SSE stream');
+    throw new Error("Missing response body for SSE stream");
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  let buffer = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
 
     for (const line of lines) {
       const trimmed = line.trim();
 
       // Skip noise: comments, event names, empty lines
-      if (!trimmed || trimmed.startsWith(':') || trimmed.startsWith('event:')) {
+      if (!trimmed || trimmed.startsWith(":") || trimmed.startsWith("event:")) {
         continue;
       }
 
-      if (trimmed.startsWith('data:')) {
+      if (trimmed.startsWith("data:")) {
         const data = trimmed.slice(5).trim();
-        if (data === '[DONE]') return;
+        if (data === "[DONE]") return;
 
         try {
           yield JSON.parse(data);
         } catch {
-          console.error('Failed to parse SSE data:', data);
+          console.error("Failed to parse SSE data:", data);
         }
       }
     }
   }
+}
+
+export function parseSSEStream(
+  response: Response,
+): Stream.Stream<any, ParseError> {
+  return Stream.fromAsyncIterable(
+    parseSSE(response),
+    (err) => new ParseError(String(err)),
+  );
 }

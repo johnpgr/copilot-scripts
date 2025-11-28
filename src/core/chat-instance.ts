@@ -1,51 +1,68 @@
-import { chatStream, ChatMessage } from '../api/chat';
-import { CopilotClient } from '../api/copilot-client';
-import { CopilotModel } from '../api/models';
+import * as Stream from "effect/Stream";
+import * as Effect from "effect/Effect";
+import { chatStream, ChatMessage } from "../api/chat";
+import { CopilotModel } from "../api/models";
+import { CopilotService } from "../services/CopilotService";
+import { ApiError, AuthError, FsError, ParseError } from "../errors";
 
 export interface AskOptions {
   system?: string;
   temperature?: number;
   stream?: boolean;
+  onChunk?: (chunk: string) => Effect.Effect<void>;
 }
 
 export class CopilotChatInstance {
   private history: ChatMessage[] = [];
 
   constructor(
-    private client: CopilotClient,
+    private copilot: CopilotService,
     private model: CopilotModel,
   ) {}
 
-  async ask(userMessage: string, options: AskOptions = {}): Promise<string> {
+  ask(
+    userMessage: string,
+    options: AskOptions = {},
+  ): Effect.Effect<string, ApiError | AuthError | FsError | ParseError> {
     const messages: ChatMessage[] = [];
 
     if (options.system) {
-      messages.push({ role: 'system', content: options.system });
+      messages.push({ role: "system", content: options.system });
     }
 
     messages.push(...this.history);
-    messages.push({ role: 'user', content: userMessage });
+    messages.push({ role: "user", content: userMessage });
 
-    let fullResponse = '';
     const shouldStream = options.stream !== false;
 
-    for await (const chunk of chatStream(this.client, this.model, messages, {
+    const stream = chatStream(this.copilot, this.model, messages, {
       temperature: options.temperature,
-    })) {
-      if (shouldStream) {
-        process.stdout.write(chunk);
+    });
+
+    const withSideEffects = shouldStream
+      ? Stream.tap(
+          stream,
+          (chunk) =>
+            options.onChunk
+              ? options.onChunk(chunk)
+              : Effect.sync(() => process.stdout.write(chunk)),
+        )
+      : stream;
+
+    const aggregated = Stream.runFold(
+      withSideEffects,
+      "",
+      (acc, chunk) => acc + chunk,
+    );
+
+    return Effect.map(aggregated, (fullResponse) => {
+      if (shouldStream && fullResponse && !options.onChunk) {
+        process.stdout.write("\n");
       }
-      fullResponse += chunk;
-    }
-
-    if (shouldStream && fullResponse) {
-      process.stdout.write('\n');
-    }
-
-    this.history.push({ role: 'user', content: userMessage });
-    this.history.push({ role: 'assistant', content: fullResponse });
-
-    return fullResponse;
+      this.history.push({ role: "user", content: userMessage });
+      this.history.push({ role: "assistant", content: fullResponse });
+      return fullResponse;
+    });
   }
 
   getHistory(): ChatMessage[] {

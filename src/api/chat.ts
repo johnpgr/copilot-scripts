@@ -1,78 +1,82 @@
-import { CopilotClient } from './copilot-client';
-import { CopilotModel } from './models';
+import * as Stream from "effect/Stream";
+import { CopilotModel } from "./models";
+import { CopilotService } from "../services/CopilotService";
+import { ApiError, AuthError, FsError, ParseError } from "../errors";
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
-export async function* chatStream(
-  client: CopilotClient,
+export const chatStream = (
+  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
   options: { temperature?: number } = {},
-): AsyncGenerator<string, void, unknown> {
+): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> => {
   if (model.use_responses) {
-    try {
-      yield* streamResponsesAPI(client, model, messages);
-      return;
-    } catch (e) {
-      console.warn('Responses API failed, falling back to Chat Completions:', e);
-    }
+    return Stream.catchAll(streamResponsesAPI(copilot, model, messages), () =>
+      streamChatCompletions(copilot, model, messages, options),
+    );
   }
+  return streamChatCompletions(copilot, model, messages, options);
+};
 
-  yield* streamChatCompletions(client, model, messages, options);
-}
-
-async function* streamResponsesAPI(
-  client: CopilotClient,
+function streamResponsesAPI(
+  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
-): AsyncGenerator<string, void, unknown> {
-  const systemMsg = messages.find(m => m.role === 'system');
-  const inputMessages = messages.filter(m => m.role !== 'system');
+): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> {
+  const systemMsg = messages.find((m) => m.role === "system");
+  const inputMessages = messages.filter((m) => m.role !== "system");
 
   const body = {
     model: model.id,
     stream: true,
-    input: inputMessages.map(m => ({ role: m.role, content: m.content })),
+    input: inputMessages.map((m) => ({ role: m.role, content: m.content })),
     ...(systemMsg && { instructions: systemMsg.content }),
   };
 
-  for await (const chunk of client.stream('/responses', body)) {
-    if (chunk.type === 'response.content.delta' || chunk.type === 'response.output_text.delta') {
+  return Stream.flatMap(copilot.stream("/responses", body), (chunk) => {
+    if (
+      chunk.type === "response.content.delta" ||
+      chunk.type === "response.output_text.delta"
+    ) {
       const text = extractTextFromDelta(chunk.delta);
-      if (text) yield text;
+      return text ? Stream.succeed(text) : Stream.empty;
     }
-  }
+    return Stream.empty;
+  });
 }
 
-async function* streamChatCompletions(
-  client: CopilotClient,
+function streamChatCompletions(
+  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
   options: { temperature?: number },
-): AsyncGenerator<string, void, unknown> {
+): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> {
   const body = {
     model: model.id,
     stream: true,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
-    ...(options.temperature !== undefined && { temperature: options.temperature }),
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    ...(options.temperature !== undefined && {
+      temperature: options.temperature,
+    }),
   };
 
-  for await (const chunk of client.stream('/chat/completions', body)) {
+  return Stream.flatMap(copilot.stream("/chat/completions", body), (chunk) => {
     const content = chunk.choices?.[0]?.delta?.content;
-    if (content) yield content;
-  }
+    return content ? Stream.succeed(content) : Stream.empty;
+  });
 }
 
 function extractTextFromDelta(delta: any): string {
-  if (typeof delta === 'string') return delta;
+  if (typeof delta === "string") return delta;
   if (delta?.text) return delta.text;
   if (delta?.content) return delta.content;
   if (delta?.output_text) {
-    if (typeof delta.output_text === 'string') return delta.output_text;
+    if (typeof delta.output_text === "string") return delta.output_text;
     if (delta.output_text.text) return delta.output_text.text;
   }
-  return '';
+  return "";
 }
