@@ -1,0 +1,21 @@
+{
+  "name": "copilot-scripts",
+  "version": "0.1.0",
+  "description": "ChatSH, HoleFill, Refactor using GitHub Copilot API",
+  "type": "module",
+  "bin": {
+    "chatsh": "./src/tools/chatsh.ts",
+    "holefill": "./src/tools/holefill.ts",
+    "refactor": "./src/tools/refactor.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gpt-tokenizer": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9"
+  }
+}
