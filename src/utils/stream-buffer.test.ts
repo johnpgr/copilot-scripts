@@ -80,7 +80,7 @@ describe("StreamBuffer", () => {
     expect(output).not.toContain("```");
   });
 
-  test("flushes unclosed code block as plain text", async () => {
+  test("flushes unclosed code block with highlighting", async () => {
     let output = "";
     const buffer = new StreamBuffer((text) => {
       output += text;
@@ -91,7 +91,11 @@ describe("StreamBuffer", () => {
     // No closing fence
     await buffer.flush();
 
-    expect(output).toContain("const x = 1");
+    // Should still contain the code content
+    expect(output).toContain("const");
+    expect(output).toContain("x");
+    // Should be highlighted (with ANSI codes)
+    expect(output).toContain("\x1b[");
   });
 
   test("ignores inline backticks", async () => {
