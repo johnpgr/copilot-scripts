@@ -26,4 +26,11 @@ export class ParseError extends Error {
   }
 }
 
-export type AppError = AuthError | ApiError | FsError | ParseError;
+export class HighlightError extends Error {
+  readonly _tag = "HighlightError";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export type AppError = AuthError | ApiError | FsError | ParseError | HighlightError;

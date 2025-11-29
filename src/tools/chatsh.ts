@@ -11,7 +11,7 @@ import { CopilotService } from "../services/CopilotService";
 import { RuntimeServices } from "../runtime";
 import { CopilotModel } from "../api/models";
 import { StreamBuffer } from "../utils/stream-buffer";
-import { warmupHighlighter } from "../utils/syntax-highlighter";
+import { SyntaxHighlighter } from "../utils/syntax-highlighter";
 
 const execAsync = promisify(exec);
 
@@ -94,8 +94,6 @@ async function runChat({ copilot, logService, model, logFile }: ChatEnv) {
 
     await log(`\n> ${line}\n`);
 
-    // Pre-warm syntax highlighter in background while waiting for response
-    void warmupHighlighter();
     const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let frameIdx = 0;
     let spinnerTimer: ReturnType<typeof setInterval> | null = null;
@@ -127,26 +125,26 @@ async function runChat({ copilot, logService, model, logFile }: ChatEnv) {
       () => Effect.sync(stopSpinner),
     );
 
-    const streamBuffer = new StreamBuffer((text) => {
-      process.stdout.write(text);
-    });
+    const highlighter = SyntaxHighlighter.create();
 
     const response = await Effect.runPromise(
       Effect.scoped(
-        Effect.gen(function* (_) {
-          yield* _(spinner);
-          const result = yield* _(
-            chat.ask(fullMessage, {
-              system: SYSTEM_PROMPT,
-              stream: true,
-              onChunk: (chunk) =>
-                Effect.promise(() => {
-                  stopSpinner();
-                  return streamBuffer.write(chunk);
-                }),
-            }),
+        Effect.gen(function* () {
+          yield* spinner;
+          const streamBuffer = yield* StreamBuffer.create(
+            (text) => process.stdout.write(text),
+            highlighter,
           );
-          yield* _(Effect.promise(() => streamBuffer.flush()));
+          const result = yield* chat.ask(fullMessage, {
+            system: SYSTEM_PROMPT,
+            stream: true,
+            onChunk: (chunk) =>
+              Effect.gen(function* () {
+                stopSpinner();
+                yield* streamBuffer.write(chunk);
+              }),
+          });
+          yield* streamBuffer.flush();
           return result;
         }),
       ),

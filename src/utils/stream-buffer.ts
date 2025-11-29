@@ -1,181 +1,218 @@
-import { highlightCode } from "./syntax-highlighter";
+import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
+import * as Option from "effect/Option";
+import { SyntaxHighlighter } from "./syntax-highlighter";
+import { HighlightError } from "../errors";
 
 type State = "NORMAL" | "CODE_FENCE_OPENING" | "CODE_BLOCK";
 
-export class StreamBuffer {
-  private state: State = "NORMAL";
-  private lineBuffer: string = ""; // Current incomplete line in code block
-  private language: string | null = null;
-  private pendingChunk: string = "";
+interface BufferState {
+  state: State;
+  lineBuffer: string;
+  language: Option.Option<string>;
+  pending: string;
+}
 
-  constructor(private onWrite: (text: string) => void) {}
+const initialState: BufferState = {
+  state: "NORMAL",
+  lineBuffer: "",
+  language: Option.none(),
+  pending: "",
+};
 
-  async write(chunk: string): Promise<void> {
-    this.pendingChunk += chunk;
+export interface StreamBuffer {
+  write: (chunk: string) => Effect.Effect<void, HighlightError>;
+  flush: () => Effect.Effect<void, HighlightError>;
+}
 
-    while (this.pendingChunk.length > 0) {
-      const processed = await this.processChunk();
-      if (!processed) {
-        break;
-      }
-    }
-  }
+export namespace StreamBuffer {
+  export function create(
+    onWrite: (text: string) => void,
+    highlighter: SyntaxHighlighter,
+  ): Effect.Effect<StreamBuffer, never> {
+    return Effect.gen(function* () {
+      const ref = yield* Ref.make(initialState);
 
-  private async processChunk(): Promise<boolean> {
-    if (this.state === "NORMAL") {
-      return await this.processNormalState();
-    } else if (this.state === "CODE_FENCE_OPENING") {
-      return await this.processCodeFenceOpeningState();
-    } else {
-      return await this.processCodeBlockState();
-    }
-  }
+      const highlight = (code: string, lang: Option.Option<string>) =>
+        highlighter.highlight(code, Option.getOrElse(lang, () => "plaintext"));
 
-  private async processNormalState(): Promise<boolean> {
-    // Look for complete fence pattern: ``` at start of line followed by optional language and newline
-    const fenceMatch = this.pendingChunk.match(/(^|\n)```(\w*)(\n)/);
+      const processNormalState = (
+        current: BufferState,
+      ): Effect.Effect<{ processed: boolean; next: BufferState }, HighlightError> =>
+        Effect.gen(function* () {
+          const fenceMatch = current.pending.match(/(^|\n)```(\w*)(\n)/);
 
-    if (fenceMatch) {
-      const fenceIndex = fenceMatch.index! + (fenceMatch[1] === "\n" ? 1 : 0);
+          if (fenceMatch) {
+            const fenceIndex = fenceMatch.index! + (fenceMatch[1] === "\n" ? 1 : 0);
 
-      // Write everything before the fence
-      if (fenceIndex > 0) {
-        this.onWrite(this.pendingChunk.substring(0, fenceIndex));
-      }
+            if (fenceIndex > 0) {
+              onWrite(current.pending.substring(0, fenceIndex));
+            }
 
-      // Extract language if present
-      this.language = fenceMatch[2] || null;
+            const lang = fenceMatch[2] || "";
+            const fenceLineEnd =
+              fenceIndex + fenceMatch[0].length - (fenceMatch[1] === "\n" ? 1 : 0);
 
-      // Complete fence line found, transition to CODE_BLOCK
-      this.state = "CODE_BLOCK";
-      this.lineBuffer = "";
-      // Skip past the entire fence line including newline
-      const fenceLineEnd =
-        fenceIndex + fenceMatch[0].length - (fenceMatch[1] === "\n" ? 1 : 0);
-      this.pendingChunk = this.pendingChunk.substring(fenceLineEnd);
-      return true;
-    }
+            return {
+              processed: true,
+              next: {
+                state: "CODE_BLOCK" as State,
+                lineBuffer: "",
+                language: lang ? Option.some(lang) : Option.none(),
+                pending: current.pending.substring(fenceLineEnd),
+              },
+            };
+          }
 
-    // Check for partial fence that needs more data (``` possibly followed by language, no newline yet)
-    const partialFenceMatch = this.pendingChunk.match(/(^|\n)```\w*$/);
-    if (partialFenceMatch) {
-      const fenceIndex =
-        partialFenceMatch.index! + (partialFenceMatch[1] === "\n" ? 1 : 0);
-      // Write everything before the partial fence
-      if (fenceIndex > 0) {
-        this.onWrite(this.pendingChunk.substring(0, fenceIndex));
-      }
-      this.pendingChunk = this.pendingChunk.substring(fenceIndex);
-      this.state = "CODE_FENCE_OPENING";
-      return false;
-    }
+          const partialFenceMatch = current.pending.match(/(^|\n)```\w*$/);
+          if (partialFenceMatch) {
+            const fenceIndex =
+              partialFenceMatch.index! + (partialFenceMatch[1] === "\n" ? 1 : 0);
+            if (fenceIndex > 0) {
+              onWrite(current.pending.substring(0, fenceIndex));
+            }
+            return {
+              processed: false,
+              next: {
+                ...current,
+                state: "CODE_FENCE_OPENING" as State,
+                pending: current.pending.substring(fenceIndex),
+              },
+            };
+          }
 
-    // Check if trailing chars could be partial fence (` or ``)
-    const trailingFenceMatch = this.pendingChunk.match(/(\n`{1,2}|^`{1,2})$/);
+          const trailingFenceMatch = current.pending.match(/(\n`{1,2}|^`{1,2})$/);
+          if (trailingFenceMatch) {
+            const safeEnd = trailingFenceMatch.index!;
+            if (safeEnd > 0) {
+              onWrite(current.pending.substring(0, safeEnd));
+            }
+            return {
+              processed: false,
+              next: { ...current, pending: current.pending.substring(safeEnd) },
+            };
+          }
 
-    if (trailingFenceMatch) {
-      const safeEnd = trailingFenceMatch.index!;
-      if (safeEnd > 0) {
-        this.onWrite(this.pendingChunk.substring(0, safeEnd));
-      }
-      this.pendingChunk = this.pendingChunk.substring(safeEnd);
-      return false;
-    }
+          onWrite(current.pending);
+          return { processed: false, next: { ...current, pending: "" } };
+        });
 
-    // No fence - write everything
-    this.onWrite(this.pendingChunk);
-    this.pendingChunk = "";
-    return false;
-  }
+      const processCodeFenceOpeningState = (
+        current: BufferState,
+      ): Effect.Effect<{ processed: boolean; next: BufferState }, HighlightError> =>
+        Effect.gen(function* () {
+          const newlineIndex = current.pending.indexOf("\n");
 
-  private async processCodeFenceOpeningState(): Promise<boolean> {
-    const newlineIndex = this.pendingChunk.indexOf("\n");
+          if (newlineIndex === -1) {
+            return { processed: false, next: current };
+          }
 
-    if (newlineIndex === -1) {
-      return false;
-    }
+          const fenceLine = current.pending.substring(0, newlineIndex);
+          const langMatch = fenceLine.match(/^```(\w*)/);
+          const lang = langMatch?.[1] || "";
 
-    // Extract language from the fence line
-    const fenceLine = this.pendingChunk.substring(0, newlineIndex);
-    const langMatch = fenceLine.match(/^```(\w*)/);
-    if (langMatch) {
-      this.language = langMatch[1] || null;
-    }
+          return {
+            processed: true,
+            next: {
+              state: "CODE_BLOCK" as State,
+              lineBuffer: "",
+              language: lang ? Option.some(lang) : Option.none(),
+              pending: current.pending.substring(newlineIndex + 1),
+            },
+          };
+        });
 
-    // Transition to CODE_BLOCK
-    this.state = "CODE_BLOCK";
-    this.lineBuffer = "";
-    this.pendingChunk = this.pendingChunk.substring(newlineIndex + 1);
-    return true;
-  }
+      const processCodeBlockState = (
+        current: BufferState,
+      ): Effect.Effect<{ processed: boolean; next: BufferState }, HighlightError> =>
+        Effect.gen(function* () {
+          const newlineIndex = current.pending.indexOf("\n");
 
-  private async processCodeBlockState(): Promise<boolean> {
-    // Strategy: Process line by line, highlight and output each complete line immediately
-    // Only buffer the current incomplete line
-    // Watch for closing fence at the start of a line
+          if (newlineIndex === -1) {
+            const combined = current.lineBuffer + current.pending;
 
-    // Check if we have a complete line (or closing fence)
-    const newlineIndex = this.pendingChunk.indexOf("\n");
+            if (/^`{1,3}[ \t]*$/.test(combined)) {
+              return {
+                processed: false,
+                next: { ...current, lineBuffer: combined, pending: "" },
+              };
+            }
 
-    if (newlineIndex === -1) {
-      // No complete line yet - check if this could be start of closing fence
-      const combined = this.lineBuffer + this.pendingChunk;
+            return {
+              processed: false,
+              next: { ...current, lineBuffer: combined, pending: "" },
+            };
+          }
 
-      // If the line so far looks like it could be a closing fence, hold back
-      if (/^`{1,3}[ \t]*$/.test(combined)) {
-        this.lineBuffer = combined;
-        this.pendingChunk = "";
-        return false;
-      }
+          const lineContent = current.pending.substring(0, newlineIndex);
+          const fullLine = current.lineBuffer + lineContent;
+          const remaining = current.pending.substring(newlineIndex + 1);
 
-      // Not a potential closing fence - accumulate in line buffer
-      this.lineBuffer += this.pendingChunk;
-      this.pendingChunk = "";
-      return false;
-    }
+          if (/^```[ \t]*$/.test(fullLine)) {
+            return {
+              processed: true,
+              next: {
+                state: "NORMAL" as State,
+                lineBuffer: "",
+                language: Option.none(),
+                pending: remaining,
+              },
+            };
+          }
 
-    // We have a newline - extract the complete line
-    const lineContent = this.pendingChunk.substring(0, newlineIndex);
-    const fullLine = this.lineBuffer + lineContent;
-    this.pendingChunk = this.pendingChunk.substring(newlineIndex + 1);
-    this.lineBuffer = "";
+          const highlighted = yield* highlight(fullLine, current.language);
+          onWrite(highlighted + "\n");
 
-    // Check if this line is the closing fence
-    if (/^```[ \t]*$/.test(fullLine)) {
-      // Closing fence found - transition back to NORMAL
-      this.state = "NORMAL";
-      this.language = null;
-      return true;
-    }
+          return {
+            processed: true,
+            next: { ...current, lineBuffer: "", pending: remaining },
+          };
+        });
 
-    // Not a closing fence - highlight and output this line
-    const highlighted = await highlightCode(
-      fullLine,
-      this.language || "text",
-    );
-    this.onWrite(highlighted + "\n");
+      const processChunk = (
+        current: BufferState,
+      ): Effect.Effect<{ processed: boolean; next: BufferState }, HighlightError> => {
+        if (current.state === "NORMAL") {
+          return processNormalState(current);
+        }
+        if (current.state === "CODE_FENCE_OPENING") {
+          return processCodeFenceOpeningState(current);
+        }
+        return processCodeBlockState(current);
+      };
 
-    return true;
-  }
+      const write = (chunk: string): Effect.Effect<void, HighlightError> =>
+        Effect.gen(function* () {
+          yield* Ref.update(ref, (s) => ({ ...s, pending: s.pending + chunk }));
 
-  async flush(): Promise<void> {
-    if (this.state === "CODE_BLOCK" && this.lineBuffer.length > 0) {
-      // Unclosed code block with remaining content - write highlighted
-      const highlighted = await highlightCode(
-        this.lineBuffer,
-        this.language || "text",
-      );
-      this.onWrite(highlighted);
-    }
+          let shouldContinue = true;
+          while (shouldContinue) {
+            const current = yield* Ref.get(ref);
+            if (current.pending.length === 0) break;
 
-    if (this.pendingChunk.length > 0) {
-      this.onWrite(this.pendingChunk);
-    }
+            const result = yield* processChunk(current);
+            yield* Ref.set(ref, result.next);
+            shouldContinue = result.processed;
+          }
+        });
 
-    // Reset all state
-    this.state = "NORMAL";
-    this.lineBuffer = "";
-    this.language = null;
-    this.pendingChunk = "";
+      const flush = (): Effect.Effect<void, HighlightError> =>
+        Effect.gen(function* () {
+          const current = yield* Ref.get(ref);
+
+          if (current.state === "CODE_BLOCK" && current.lineBuffer.length > 0) {
+            const highlighted = yield* highlight(current.lineBuffer, current.language);
+            onWrite(highlighted);
+          }
+
+          if (current.pending.length > 0) {
+            onWrite(current.pending);
+          }
+
+          yield* Ref.set(ref, initialState);
+        });
+
+      return { write, flush };
+    });
   }
 }

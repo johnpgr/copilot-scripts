@@ -3,13 +3,13 @@ import * as Effect from "effect/Effect";
 import { chatStream, ChatMessage } from "../api/chat";
 import { CopilotModel } from "../api/models";
 import { CopilotService } from "../services/CopilotService";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
+import { ApiError, AuthError, FsError, ParseError, HighlightError } from "../errors";
 
 export interface AskOptions {
   system?: string;
   temperature?: number;
   stream?: boolean;
-  onChunk?: (chunk: string) => Effect.Effect<void>;
+  onChunk?: (chunk: string) => Effect.Effect<void, HighlightError>;
 }
 
 export class CopilotChatInstance {
@@ -23,7 +23,7 @@ export class CopilotChatInstance {
   ask(
     userMessage: string,
     options: AskOptions = {},
-  ): Effect.Effect<string, ApiError | AuthError | FsError | ParseError> {
+  ): Effect.Effect<string, ApiError | AuthError | FsError | ParseError | HighlightError> {
     const messages: ChatMessage[] = [];
 
     if (options.system) {
