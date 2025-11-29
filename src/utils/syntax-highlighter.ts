@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { BundledLanguage, HighlighterGeneric, BundledTheme } from "shiki";
+import type { BundledLanguage } from "shiki";
+import { getSingletonHighlighter } from "shiki";
 import { HighlightError } from "../errors";
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -58,19 +59,22 @@ function colorToAnsi(hex: string): string {
 }
 
 export interface SyntaxHighlighter {
-  highlight: (code: string, lang: string) => Effect.Effect<string, HighlightError>;
+  highlight: (
+    code: string,
+    lang: string,
+  ) => Effect.Effect<string, HighlightError>;
 }
 
 export namespace SyntaxHighlighter {
   const initHighlighter = Effect.tryPromise({
     try: async () => {
-      const { getSingletonHighlighter } = await import("shiki");
       return getSingletonHighlighter({
         themes: ["github-dark"],
         langs: [...SUPPORTED_LANGUAGES],
       });
     },
-    catch: (err) => new HighlightError(`Failed to initialize highlighter: ${String(err)}`),
+    catch: (err) =>
+      new HighlightError(`Failed to initialize highlighter: ${String(err)}`),
   });
 
   const cachedHighlighter = Effect.cached(initHighlighter);
@@ -100,7 +104,8 @@ export namespace SyntaxHighlighter {
                 lang: langToUse as BundledLanguage,
                 theme: "github-dark",
               }),
-            catch: (err) => new HighlightError(`Tokenization failed: ${String(err)}`),
+            catch: (err) =>
+              new HighlightError(`Tokenization failed: ${String(err)}`),
           });
 
           const reset = "\x1b[0m";
@@ -134,7 +139,9 @@ export namespace SyntaxHighlighter {
 const defaultHighlighter = SyntaxHighlighter.create();
 
 export const warmupHighlighter = (): Promise<void> =>
-  Effect.runPromise(defaultHighlighter.highlight("", "text").pipe(Effect.asVoid));
+  Effect.runPromise(
+    defaultHighlighter.highlight("", "text").pipe(Effect.asVoid),
+  );
 
 export const highlightCode = (code: string, lang: string): Promise<string> =>
   Effect.runPromise(defaultHighlighter.highlight(code, lang));
