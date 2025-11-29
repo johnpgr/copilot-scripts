@@ -10,6 +10,8 @@ import { LogService } from "../services/LogService";
 import { CopilotService } from "../services/CopilotService";
 import { RuntimeServices } from "../runtime";
 import { CopilotModel } from "../api/models";
+import { StreamBuffer } from "../utils/stream-buffer";
+import { warmupHighlighter } from "../utils/syntax-highlighter";
 
 const execAsync = promisify(exec);
 
@@ -91,6 +93,9 @@ async function runChat({ copilot, logService, model, logFile }: ChatEnv) {
     const fullMessage = contextParts.join("\n");
 
     await log(`\n> ${line}\n`);
+
+    // Pre-warm syntax highlighter in background while waiting for response
+    void warmupHighlighter();
     const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let frameIdx = 0;
     let spinnerTimer: ReturnType<typeof setInterval> | null = null;
@@ -122,21 +127,27 @@ async function runChat({ copilot, logService, model, logFile }: ChatEnv) {
       () => Effect.sync(stopSpinner),
     );
 
+    const streamBuffer = new StreamBuffer((text) => {
+      process.stdout.write(text);
+    });
+
     const response = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* (_) {
           yield* _(spinner);
-          return yield* _(
+          const result = yield* _(
             chat.ask(fullMessage, {
               system: SYSTEM_PROMPT,
               stream: true,
               onChunk: (chunk) =>
-                Effect.sync(() => {
+                Effect.promise(() => {
                   stopSpinner();
-                  process.stdout.write(chunk);
+                  return streamBuffer.write(chunk);
                 }),
             }),
           );
+          yield* _(Effect.promise(() => streamBuffer.flush()));
+          return result;
         }),
       ),
     );

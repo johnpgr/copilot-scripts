@@ -16,7 +16,8 @@
     "@effect/platform-node": "^0.102.0",
     "@effect/schema": "^0.75.5",
     "effect": "^3.19.8",
-    "gpt-tokenizer": "^2.9.0"
+    "gpt-tokenizer": "^2.9.0",
+    "shiki": "^3.17.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
