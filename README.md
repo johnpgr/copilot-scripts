@@ -213,7 +213,7 @@ Apply changes? (y/n):
 
 ## Model Specification
 
-**Format:** `alias` or `vendor:model_name`
+**Format:** `alias` or `model_id`
 
 **Aliases:**
 - `c` - Claude 3.5 Sonnet
@@ -221,7 +221,7 @@ Apply changes? (y/n):
 - `i` - Gemini 1.5 Pro
 - `o` - GPT-4o (default)
 
-**Examples:**
+**Examples (using full model IDs):**
 - `gpt-4o`
 - `claude-3-5-sonnet-20241022`
 - `gemini-1.5-pro-002`
