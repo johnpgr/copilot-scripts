@@ -389,8 +389,3 @@ Inspired by [Taelin AI Scripts](https://github.com/VictorTaelin/ai-scripts) - ad
 ## License
 
 MIT - See LICENSE file
-
-## Links
-
-- [GitHub Issues](https://github.com/yourusername/copilot-scripts/issues)
-- [Product Documentation](./agent-os/product/)
