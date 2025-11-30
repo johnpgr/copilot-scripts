@@ -368,28 +368,6 @@ bun run typecheck
 bun test
 ```
 
-**Project Structure:**
-```
-src/
-├── api/          # GitHub Copilot API clients
-├── auth/         # OAuth device flow, token persistence
-├── core/         # Chat instance, model resolver
-├── errors/       # Typed error classes
-├── schemas/      # Schema validators
-├── services/     # Service implementations
-├── tools/        # CLI entry points
-├── utils/        # Pure utilities
-├── index.ts      # Public API exports
-└── runtime.ts    # Service dependency wiring
-```
-
-## Performance Targets
-
-- **Startup Time**: <100ms
-- **Token Caching**: Zero auth overhead after initial flow
-- **Streaming Latency**: <200ms to first chunk
-- **Memory Footprint**: <50MB during streaming
-
 ## Security
 
 **Token Storage:**
