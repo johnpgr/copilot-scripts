@@ -1,11 +1,10 @@
 # copilot-scripts
 
-CLI tools for AI code assistance via GitHub Copilot API. Terminal-native, Effect-based, Unix-composable.
+CLI tools for AI code assistance via GitHub Copilot API. Terminal-native, Unix-composable.
 
 ## Features
 
 - **Terminal-Native**: No GUI, runs in SSH/tmux/headless environments
-- **Effect-Based**: Typed errors, resource cleanup, zero unhandled rejections
 - **Stateful Conversations**: Context maintained across interactions
 - **Streaming Responses**: Real-time SSE output
 - **Model Selection**: Aliases (g/c/o) + specific model IDs
@@ -317,8 +316,6 @@ vim.keymap.set('n', '<leader>ar', function() copilot.refactor('o') end, { desc =
 
 ## Architecture
 
-Built on Effect-TS for reliability:
-
 ```
 Tools (CLI entry points: chatsh, holefill, refactor)
   ↓
@@ -328,20 +325,6 @@ Services (Auth, Copilot, FileSystem, Log)
   ↓
 API/Utils (streaming, tokenizer)
 ```
-
-**Typed Error Channels:**
-- `AuthError` - OAuth/token failures
-- `ApiError` - GitHub Copilot API issues
-- `FsError` - File system operations
-- `ParseError` - JSON/schema validation
-
-**Dependencies:**
-- `effect` - Core Effect runtime
-- `@effect/platform` - FS/Command abstractions
-- `@effect/schema` - Runtime validation
-- `gpt-tokenizer` - Token counting
-
-Total: 5 direct dependencies
 
 ## Development
 
@@ -372,8 +355,8 @@ src/
 ├── auth/         # OAuth device flow, token persistence
 ├── core/         # Chat instance, model resolver
 ├── errors/       # Typed error classes
-├── schemas/      # Effect Schema validators
-├── services/     # Effect service implementations
+├── schemas/      # Schema validators
+├── services/     # Service implementations
 ├── tools/        # CLI entry points
 ├── utils/        # Pure utilities
 ├── index.ts      # Public API exports
@@ -395,13 +378,13 @@ src/
 - Never logged, only sent to GitHub API
 
 **Input Validation:**
-- All external inputs validated via Effect Schema
+- All external inputs validated
 - No shell injection in command execution
 - API responses validated against schemas
 
 ## Inspiration
 
-Inspired by [Taelin AI Scripts](https://github.com/VictorTaelin/ai-scripts) - adapted for GitHub Copilot API with Effect-based architecture.
+Inspired by [Taelin AI Scripts](https://github.com/VictorTaelin/ai-scripts) - adapted for GitHub Copilot API.
 
 ## License
 
