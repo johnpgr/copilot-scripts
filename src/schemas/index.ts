@@ -7,9 +7,9 @@ const format = (err: unknown) =>
 
 export class DeviceCode {
   constructor(
-    public device_code: string,
-    public user_code: string,
-    public verification_uri: string,
+    public deviceCode: string,
+    public userCode: string,
+    public verificationUri: string,
     public interval: number,
   ) {}
 
@@ -39,7 +39,7 @@ export class DeviceCode {
 
 export class AccessToken {
   constructor(
-    public access_token?: string,
+    public accessToken?: string,
     public error?: string,
   ) {}
 
@@ -62,7 +62,7 @@ export class AccessToken {
 export class BearerToken {
   constructor(
     public token: string,
-    public expires_at: number,
+    public expiresAt: number,
   ) {}
 
   static Schema = S.Struct({
@@ -83,9 +83,9 @@ export class BearerToken {
 
 export class TokenCache {
   constructor(
-    public oauth_token?: string,
-    public bearer_token?: string,
-    public expires_at?: number,
+    public oauthToken?: string,
+    public bearerToken?: string,
+    public expiresAt?: number,
   ) {}
 
   static Schema = S.Struct({
@@ -109,3 +109,4 @@ export class TokenCache {
     );
   }
 }
+

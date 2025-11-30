@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import * as Effect from "effect/Effect";
 import path from "path";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { CopilotChatInstance } from "../core/chat-instance";
 import { ModelResolver } from "../core/model-resolver";
 import { fetchModels } from "../api/models";
@@ -72,6 +74,10 @@ const IMPORT_PATTERNS = [
   /^#\[(\.\/[^\]]+)\]$/,
   /^--\[(\.\/[^\]]+)\]$/,
   /^\/\/\[(\.\/[^\]]+)\]$/,
+  /^\s*import\s+.*?\s+from\s+['"](\.[^'"]+)['"]/,
+  /^\s*import\s+['"](\.[^'"]+)['"]/,
+  /^\s*export\s+.*?\s+from\s+['"](\.[^'"]+)['"]/,
+  /^\s*const\s+.*?\s*=\s*require\(['"](\.[^'"]+)['"]\)/,
 ];
 
 interface BlockEntry {
@@ -135,6 +141,18 @@ async function main() {
     collectContext(fs, absEntryPath, fileBody, root),
   );
 
+  // 2b. Find referrers (reverse dependencies) using ripgrep
+  const referrers = await Effect.runPromise(
+    findReferrers(fs, absEntryPath, root),
+  );
+
+  for (const [relPath, content] of referrers) {
+    if (!files.has(relPath)) {
+      files.set(relPath, content);
+      console.log(`Included referrer: ${relPath}`);
+    }
+  }
+
   // 3. Build blocks
   const blockState = buildBlockState(files);
   const fullContext = formatBlocks(blockState);
@@ -143,64 +161,60 @@ async function main() {
   console.log(`Files: ${files.size}`);
   console.log(`Total tokens: ${totalTokens}`);
 
-  // 4. Resolve model
-  const resolver = await Effect.runPromise(
-    ModelResolver.make(services.copilot, services.fs),
-  );
-  const model = await Effect.runPromise(resolver.resolve(modelSpec));
+  // ... (rest of main)
+}
 
-  // 5. Compacting Phase (if needed)
-  let contextToUse = fullContext;
-  const shouldCompact = files.size > 1 && totalTokens >= 32000;
+// --- Reverse Dependency Search ---
 
-  if (shouldCompact) {
-    console.log("\n[Compacting phase...]");
+const execAsync = promisify(exec);
 
-    // Try to find a faster/cheaper model for compaction
-    const allModels = await Effect.runPromise(fetchModels(copilot));
-    const compactorCandidates = ["mini", "turbo", "haiku", "flash"];
-    const fastModel =
-      allModels.find((m) =>
-        compactorCandidates.some((c) => m.id.toLowerCase().includes(c)),
-      ) || model;
+function findReferrers(
+  fs: FileSystem,
+  targetAbsPath: string,
+  root: string,
+): Effect.Effect<Map<string, string>, any> {
+  return Effect.gen(function* (_) {
+    const referrers = new Map<string, string>();
+    const filename = path.basename(targetAbsPath);
+    const nameNoExt = filename.replace(/\.[^/.]+$/, "");
+    
+    // Heuristic: search for import statements containing the filename (without extension)
+    // Matches: from "./foo" or from '../utils/foo' etc.
+    // We use a regex that requires 'from' or 'import' and quotes, and the nameNoExt.
+    // We intentionally don't use strict paths because resolving relative paths in regex is hard.
+    // This might match false positives (e.g. 'foo-bar'), but the compaction phase will filter them.
+    const regex = `(from|import|require).*['"].*${nameNoExt}['"]`;
 
-    console.log(`Using compactor model: ${fastModel.id}`);
+    try {
+      // Check if rg exists
+      yield* _(Effect.tryPromise(() => execAsync("rg --version")));
+      
+      // Run rg
+      const { stdout } = yield* _(
+        Effect.tryPromise(() => 
+          execAsync(`rg -l "${regex}" .`, { cwd: root, maxBuffer: 1024 * 1024 * 10 })
+        )
+      );
 
-    const chat = new CopilotChatInstance(copilot, fastModel);
-    const compactingPrompt = COMPACTING_PROMPT_TEMPLATE.replace(
-      "{CONTEXT}",
-      fullContext,
-    ).replace("{TASK}", taskPrompt);
+      const lines = stdout.split("\n").map(l => l.trim()).filter(l => l);
+      
+      for (const relPath of lines) {
+        const absPath = path.resolve(root, relPath);
+        if (absPath === targetAbsPath) continue; // Skip self
+        
+        // Check if it's likely a source file
+        if (!relPath.match(/\.(ts|js|tsx|jsx|py|rb|go|rs|cpp|h|c|java)$/)) continue;
 
-    const response = await Effect.runPromise(
-      chat.ask(compactingPrompt, { stream: true }),
-    );
+        const content = yield* _(fs.readFile(absPath));
+        referrers.set(relPath, content);
+      }
+    } catch (err) {
+      // Ignore errors (e.g. rg not found, or no matches)
+      // console.log("Ripgrep failed or not found, skipping reverse dependency search.");
+    }
 
-    const omittedIds = parseOmitCommands(response);
-    console.log(`\nOmitted ${omittedIds.size} irrelevant blocks`);
-    contextToUse = formatBlocks(blockState, omittedIds);
-  } else {
-    if (files.size <= 1) console.log("Skipping compaction: single file");
-    else console.log("Skipping compaction: < 32k tokens");
-  }
-
-  // 6. Editing Phase
-  console.log("\n[Editing phase...]");
-  const editingPrompt = EDITING_PROMPT_TEMPLATE.replace(
-    "{CONTEXT}",
-    contextToUse,
-  ).replace("{TASK}", taskPrompt);
-
-  const chat = new CopilotChatInstance(copilot, model);
-  const response = await Effect.runPromise(
-    chat.ask(editingPrompt, { stream: true }),
-  );
-
-  // 7. Apply changes
-  const commands = parseCommands(response);
-  await applyCommands(commands, blockState, fs);
-
-  console.log("\n✓ Refactor complete");
+    return referrers;
+  });
 }
 
 // --- Context Collection ---

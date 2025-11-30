@@ -180,9 +180,12 @@ refactor "src/**/*.ts" o         # All TS files with GPT-4o
 ```
 
 **How it works:**
-1. **Compacting Phase**: AI identifies relevant blocks
-2. **Editing Phase**: AI edits necessary blocks
-3. **Output**: Structured patches or full rewrites
+1. **Context Collection**:
+   - Recursively crawls imports in the target file (relative imports).
+   - **Reverse Dependency Search**: Uses `ripgrep` (if installed) to find other files that import the target file, adding them to the context. This allows the AI to fix call-sites in other files when you change a function signature.
+2. **Compacting Phase**: AI identifies blocks relevant to your task.
+3. **Editing Phase**: AI edits necessary blocks.
+4. **Output**: Structured patches or full rewrites.
 
 **Interactive Prompts:**
 ```bash
@@ -318,6 +321,18 @@ vim.keymap.set('n', '<leader>ari', function() copilot.refactor('i') end, { desc 
 2. Press `<leader>ar`
 3. Enter task in terminal
 4. Review and apply changes
+
+## Thinking Tokens
+
+You might notice that unlike the original `AI-scripts` (which uses direct vendor APIs), `copilot-scripts` does **not** currently display the dim-colored "thinking" or "reasoning" traces for models like Gemini or Claude.
+
+**Why?**
+- `copilot-scripts` uses the **GitHub Copilot API** as a proxy.
+- Currently, the GitHub Copilot API **hides** the raw reasoning tokens from the response stream for most models.
+- While models like `gpt-5-mini` or `claude-sonnet-4.5` might perform reasoning internally (and even report `reasoning_tokens` usage), the actual text of that thought process is not streamed back to the client by the API.
+- The VS Code Copilot Chat extension displays thinking traces using internal/privileged protocols ("Agent Mode") that are not yet fully exposed in the standard public API endpoint used by this tool.
+
+I will try to enable thinking traces as soon as the Copilot API exposes them for standard consumers.
 
 ## Architecture
 

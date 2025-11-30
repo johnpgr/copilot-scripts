@@ -106,7 +106,7 @@ export namespace AuthService {
       );
 
       console.log(
-        `\nVisit ${device.verification_uri} and enter code: ${device.user_code}\n`,
+        `\nVisit ${device.verificationUri} and enter code: ${device.userCode}\n`,
       );
       console.log("Waiting for authorization...");
 
@@ -123,7 +123,7 @@ export namespace AuthService {
                   headers: { Accept: "application/json" },
                   body: JSON.stringify({
                     client_id: CLIENT_ID,
-                    device_code: device.device_code,
+                    device_code: device.deviceCode,
                     grant_type: "urn:ietf:params:oauth:grant-type:device_code",
                   }),
                 }),
@@ -144,7 +144,7 @@ export namespace AuthService {
             }).pipe(Effect.flatMap((json) => AccessToken.fromJson(json))),
           );
 
-          if (data.access_token) return data.access_token;
+          if (data.accessToken) return data.accessToken;
           if (data.error && data.error !== "authorization_pending") {
             return yield* _(
               Effect.fail(new AuthError(`Auth error: ${data.error}`)),
@@ -194,14 +194,14 @@ export namespace AuthService {
         const cached = yield* _(loadCache(fs));
         const nowSeconds = Date.now() / 1000;
         if (
-          cached?.bearer_token &&
-          cached?.expires_at &&
-          cached.expires_at > nowSeconds
+          cached?.bearerToken &&
+          cached?.expiresAt &&
+          cached.expiresAt > nowSeconds
         ) {
-          return cached.bearer_token;
+          return cached.bearerToken;
         }
 
-        let oauthToken: string | undefined = cached?.oauth_token ?? undefined;
+        let oauthToken: string | undefined = cached?.oauthToken ?? undefined;
         if (!oauthToken) {
           const existing = yield* _(findExistingToken(fs));
           if (existing) oauthToken = existing;
@@ -215,7 +215,7 @@ export namespace AuthService {
         yield* _(
           saveCache(
             fs,
-            new TokenCache(oauthToken, bearer.token, bearer.expires_at),
+            new TokenCache(oauthToken, bearer.token, bearer.expiresAt),
           ),
         );
         return bearer.token;
