@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import * as Effect from "effect/Effect";
 import path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { CopilotChatInstance } from "../core/chat-instance";
 import { ModelResolver } from "../core/model-resolver";
@@ -68,7 +68,9 @@ Rules:
 - You may also add new files with <write file="path">...</write>.
 - To delete a file, emit <delete file="path" />.
 - Do not rewrite unchanged blocks.
-- Return only the commands; no explanations.`;
+- Do not wrap the output in markdown code blocks (e.g. \`\`\`xml).
+- After all commands, append a <summary> ... </summary> block explaining the changes.
+- Return only the commands and the summary; no conversational filler.`;
 
 const IMPORT_PATTERNS = [
   /^#\[(\.\/[^\]]+)\]$/,
@@ -161,12 +163,75 @@ async function main() {
   console.log(`Files: ${files.size}`);
   console.log(`Total tokens: ${totalTokens}`);
 
-  // ... (rest of main)
+  // 4. Resolve model
+  console.log("Resolving model...");
+  const resolver = await Effect.runPromise(
+    ModelResolver.make(services.copilot, services.fs),
+  );
+  console.log("Resolver created.");
+  const model = await Effect.runPromise(resolver.resolve(modelSpec));
+  console.log(`Model resolved: ${model.id}`);
+
+  // 5. Compacting Phase (if needed)
+  let contextToUse = fullContext;
+  const shouldCompact = files.size > 1 && totalTokens >= 32000;
+
+  if (shouldCompact) {
+    console.log("\n[Compacting phase...]");
+
+    // Try to find a faster/cheaper model for compaction
+    const allModels = await Effect.runPromise(fetchModels(copilot));
+    const compactorCandidates = ["mini", "turbo", "haiku", "flash"];
+    const fastModel =
+      allModels.find((m) =>
+        compactorCandidates.some((c) => m.id.toLowerCase().includes(c)),
+      ) || model;
+
+    console.log(`Using compactor model: ${fastModel.id}`);
+
+    const chat = new CopilotChatInstance(copilot, fastModel);
+    const compactingPrompt = COMPACTING_PROMPT_TEMPLATE.replace(
+      "{CONTEXT}",
+      fullContext,
+    ).replace("{TASK}", taskPrompt);
+
+    const response = await Effect.runPromise(
+      chat.ask(compactingPrompt, { stream: true }),
+    );
+
+    const omittedIds = parseOmitCommands(response);
+    console.log(`\nOmitted ${omittedIds.size} irrelevant blocks`);
+    contextToUse = formatBlocks(blockState, omittedIds);
+  } else {
+    if (files.size <= 1) console.log("Skipping compaction: single file");
+    else console.log("Skipping compaction: < 32k tokens");
+  }
+
+  // 6. Editing Phase
+  console.log("\n[Editing phase...]");
+  const editingPrompt = EDITING_PROMPT_TEMPLATE.replace(
+    "{CONTEXT}",
+    contextToUse,
+  ).replace("{TASK}", taskPrompt);
+
+  const chat = new CopilotChatInstance(copilot, model);
+  const response = await Effect.runPromise(
+    chat.ask(editingPrompt, { stream: true }),
+  );
+
+  // 7. Apply changes
+  const commands = parseCommands(response);
+  const messages = await applyCommands(commands, blockState, fs);
+
+  console.log("\n✓ Refactor complete");
+  if (messages.length > 0) {
+    console.log(messages.join("\n"));
+  }
 }
 
 // --- Reverse Dependency Search ---
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 function findReferrers(
   fs: FileSystem,
@@ -179,21 +244,20 @@ function findReferrers(
     const nameNoExt = filename.replace(/\.[^/.]+$/, "");
     
     // Heuristic: search for import statements containing the filename (without extension)
-    // Matches: from "./foo" or from '../utils/foo' etc.
-    // We use a regex that requires 'from' or 'import' and quotes, and the nameNoExt.
-    // We intentionally don't use strict paths because resolving relative paths in regex is hard.
-    // This might match false positives (e.g. 'foo-bar'), but the compaction phase will filter them.
     const regex = `(from|import|require).*['"].*${nameNoExt}['"]`;
 
     try {
       // Check if rg exists
-      yield* _(Effect.tryPromise(() => execAsync("rg --version")));
+      yield* _(Effect.tryPromise(() => execFileAsync("rg", ["--version"])));
       
       // Run rg
       const { stdout } = yield* _(
-        Effect.tryPromise(() => 
-          execAsync(`rg -l "${regex}" .`, { cwd: root, maxBuffer: 1024 * 1024 * 10 })
-        )
+        Effect.tryPromise(() =>
+          execFileAsync("rg", ["-l", regex, "."], {
+            cwd: root,
+            maxBuffer: 1024 * 1024 * 10,
+          }),
+        ).pipe(Effect.catchAll(() => Effect.succeed({ stdout: "" }))),
       );
 
       const lines = stdout.split("\n").map(l => l.trim()).filter(l => l);
@@ -256,28 +320,46 @@ function collectContext(
       content: string | null,
     ): Effect.Effect<void, any> =>
       Effect.gen(function* (_) {
-        const resolved = path.resolve(currentPath);
-        if (visited.has(resolved)) return;
-        visited.add(resolved);
-
+        let finalPath = path.resolve(currentPath);
         let text = content;
+        let exists = true;
+
         if (text === null) {
-          const exists = yield* _(fs.exists(resolved));
+          exists = yield* _(fs.exists(finalPath));
           if (!exists) {
-            console.warn(
-              `Warning: Import not found: ${path.relative(root, resolved)}`,
-            );
-            return;
+            // Try extensions
+            const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
+            for (const ext of extensions) {
+              const p = finalPath + ext;
+              if (yield* _(fs.exists(p))) {
+                finalPath = p;
+                exists = true;
+                break;
+              }
+            }
           }
-          text = yield* _(fs.readFile(resolved));
         }
 
-        const relPath = path.relative(root, resolved);
+        if (visited.has(finalPath)) return;
+        visited.add(finalPath);
+
+        if (!exists) {
+          console.warn(
+            `Warning: Import not found: ${path.relative(root, path.resolve(currentPath))}`,
+          );
+          return;
+        }
+
+        if (text === null) {
+          text = yield* _(fs.readFile(finalPath));
+        }
+
+        const relPath = path.relative(root, finalPath);
         context.set(relPath, text!);
 
         const imports = findImports(text!);
         for (const importPath of imports) {
-          const nextPath = path.resolve(path.dirname(resolved), importPath);
+          const nextPath = path.resolve(path.dirname(finalPath), importPath);
           yield* _(visit(nextPath, null));
         }
       });
@@ -432,7 +514,8 @@ async function applyCommands(
   commands: EditCommand[],
   state: BlockState,
   fs: FileSystem,
-) {
+): Promise<string[]> {
+  const messages: string[] = [];
   const filePatches = new Map<string, Map<number, string>>();
 
   // Process patches
@@ -446,10 +529,10 @@ async function applyCommands(
       filePatches.get(block.file)!.set(block.id, cmd.content);
     } else if (cmd.type === "write") {
       await Effect.runPromise(fs.writeFile(cmd.file, cmd.content));
-      console.log(`wrote ${cmd.file}`);
+      messages.push(`wrote ${cmd.file}`);
     } else if (cmd.type === "delete") {
       await Effect.runPromise(fs.writeFile(cmd.file, ""));
-      console.log(`deleted ${cmd.file}`);
+      messages.push(`deleted ${cmd.file}`);
     }
   }
 
@@ -463,8 +546,10 @@ async function applyCommands(
       .join("\n\n"); // Reconstruct with standard spacing
 
     await Effect.runPromise(fs.writeFile(file, updated));
-    console.log(`patched ${file}`);
+    messages.push(`patched ${file}`);
   }
+
+  return messages;
 }
 
 main().catch((err) => {
