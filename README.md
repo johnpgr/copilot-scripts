@@ -294,7 +294,12 @@ local copilot = require('copilot-scripts')
 vim.keymap.set('n', '<leader>af', copilot.hole_fill, { desc = 'AI: Fill hole' })
 vim.keymap.set('n', '<leader>ac', function() copilot.chat('c') end, { desc = 'AI: Chat (Claude)' })
 vim.keymap.set('n', '<leader>ao', function() copilot.chat('o') end, { desc = 'AI: Chat (GPT-4o)' })
-vim.keymap.set('n', '<leader>ar', function() copilot.refactor('o') end, { desc = 'AI: Refactor' })
+
+-- Refactor mappings (matching different models)
+vim.keymap.set('n', '<leader>arc', function() copilot.refactor('c') end, { desc = 'Refactor: Claude' })
+vim.keymap.set('n', '<leader>arg', function() copilot.refactor('g') end, { desc = 'Refactor: GPT-4' })
+vim.keymap.set('n', '<leader>aro', function() copilot.refactor('o') end, { desc = 'Refactor: GPT-4o' })
+vim.keymap.set('n', '<leader>ari', function() copilot.refactor('i') end, { desc = 'Refactor: Gemini' })
 ```
 
 ### Usage in Neovim
