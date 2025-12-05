@@ -58,15 +58,8 @@ function colorToAnsi(hex: string): string {
   return `\x1b[38;2;${r};${g};${b}m`;
 }
 
-export interface SyntaxHighlighter {
-  highlight: (
-    code: string,
-    lang: string,
-  ) => Effect.Effect<string, HighlightError>;
-}
-
-export namespace SyntaxHighlighter {
-  const initHighlighter = Effect.tryPromise({
+export class SyntaxHighlighter {
+  private static readonly initHighlighter = Effect.tryPromise({
     try: async () => {
       return getSingletonHighlighter({
         themes: ["github-dark"],
@@ -77,62 +70,65 @@ export namespace SyntaxHighlighter {
       new HighlightError(`Failed to initialize highlighter: ${String(err)}`),
   });
 
-  const cachedHighlighter = Effect.cached(initHighlighter);
+  private static readonly cachedHighlighter = Effect.cached(
+    SyntaxHighlighter.initHighlighter,
+  );
 
-  const getHighlighter = Effect.gen(function* () {
-    const cached = yield* cachedHighlighter;
+  private static readonly getHighlighter = Effect.gen(function* () {
+    const cached = yield* SyntaxHighlighter.cachedHighlighter;
     return yield* cached;
   });
 
-  export function create(): SyntaxHighlighter {
-    return {
-      highlight: (code, lang) =>
-        Effect.gen(function* () {
-          if (code === "") return "";
+  static create(): SyntaxHighlighter {
+    return new SyntaxHighlighter();
+  }
 
-          const normalized = normalizeLanguage(lang);
-          const hl = yield* getHighlighter;
+  highlight(code: string, lang: string): Effect.Effect<string, HighlightError> {
+    return Effect.gen(function* () {
+      if (code === "") return "";
 
-          const loadedLangs = hl.getLoadedLanguages();
-          const langToUse = loadedLangs.includes(normalized as BundledLanguage)
-            ? normalized
-            : "plaintext";
+      const normalized = normalizeLanguage(lang);
+      const hl = yield* SyntaxHighlighter.getHighlighter;
 
-          const tokens = yield* Effect.try({
-            try: () =>
-              hl.codeToTokens(code, {
-                lang: langToUse as BundledLanguage,
-                theme: "github-dark",
-              }),
-            catch: (err) =>
-              new HighlightError(`Tokenization failed: ${String(err)}`),
-          });
+      const loadedLangs = hl.getLoadedLanguages();
+      const langToUse = loadedLangs.includes(normalized as BundledLanguage)
+        ? normalized
+        : "plaintext";
 
-          const reset = "\x1b[0m";
-          let result = "";
+      const tokens = yield* Effect.try({
+        try: () =>
+          hl.codeToTokens(code, {
+            lang: langToUse as BundledLanguage,
+            theme: "github-dark",
+          }),
+        catch: (err) =>
+          new HighlightError(`Tokenization failed: ${String(err)}`),
+      });
 
-          for (const line of tokens.tokens) {
-            for (const token of line) {
-              result += Option.fromNullable(token.color)
-                .pipe(Option.map((c) => colorToAnsi(c) + token.content + reset))
-                .pipe(Option.getOrElse(() => token.content));
-            }
-            result += "\n";
-          }
+      const reset = "\x1b[0m";
+      let result = "";
 
-          if (!code.endsWith("\n") && result.endsWith("\n")) {
-            result = result.slice(0, -1);
-          }
+      for (const line of tokens.tokens) {
+        for (const token of line) {
+          result += Option.fromNullable(token.color)
+            .pipe(Option.map((c) => colorToAnsi(c) + token.content + reset))
+            .pipe(Option.getOrElse(() => token.content));
+        }
+        result += "\n";
+      }
 
-          return result;
-        }).pipe(
-          Effect.catchAll((err) =>
-            err._tag === "HighlightError"
-              ? Effect.succeed(code)
-              : Effect.succeed(code),
-          ),
-        ),
-    };
+      if (!code.endsWith("\n") && result.endsWith("\n")) {
+        result = result.slice(0, -1);
+      }
+
+      return result;
+    }).pipe(
+      Effect.catchAll((err) =>
+        err._tag === "HighlightError"
+          ? Effect.succeed(code)
+          : Effect.succeed(code),
+      ),
+    );
   }
 }
 
