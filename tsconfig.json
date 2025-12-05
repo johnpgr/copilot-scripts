@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "plugins": [
       {
@@ -9,6 +10,7 @@
     "module": "NodeNext",
     "moduleDetection": "force",
     "rewriteRelativeImportExtensions": true,
+    "erasableSyntaxOnly": true,
     "lib": ["ESNext", "DOM"],
     "types": ["bun-types"],
     "verbatimModuleSyntax": true,

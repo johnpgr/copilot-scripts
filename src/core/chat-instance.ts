@@ -19,12 +19,14 @@ export interface AskOptions {
 }
 
 export class CopilotChatInstance {
+  private copilot: Copilot;
+  private model: CopilotModel;
   private history: ChatMessage[] = [];
 
-  constructor(
-    private copilot: Copilot,
-    private model: CopilotModel,
-  ) {}
+  constructor(copilot: Copilot, model: CopilotModel) {
+    this.copilot = copilot;
+    this.model = model;
+  }
 
   ask(
     userMessage: string,

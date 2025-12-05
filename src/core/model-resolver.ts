@@ -30,16 +30,20 @@ type ModelFetcher = Effect.Effect<
 >;
 
 export class ModelResolver {
+  private readonly copilot: Copilot;
+  private readonly fetcher: ModelFetcher;
   private cache: { models: CopilotModel[]; expiresAt: number } | null = null;
   private shortcuts: ShortcutConfig;
 
   private constructor(
-    private copilot: Copilot,
+    copilot: Copilot,
     _fs: FileSystem,
     shortcuts: ShortcutConfig,
-    private fetcher: ModelFetcher,
+    fetcher: ModelFetcher,
   ) {
+    this.copilot = copilot;
     this.shortcuts = shortcuts;
+    this.fetcher = fetcher;
   }
 
   static make(
