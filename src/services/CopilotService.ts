@@ -3,8 +3,11 @@ import { AuthService } from "./AuthService.ts";
 import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 import { parseSSEStream } from "../utils/streaming.ts";
 
+const runtime =
+  typeof Bun !== "undefined" ? `Bun/${Bun.version}` : `Node/${process.version}`;
+
 const COPILOT_HEADERS = {
-  "Editor-Version": `Bun/${Bun.version}`,
+  "Editor-Version": runtime,
   "Editor-Plugin-Version": "copilot-scripts/0.1.0",
   "Copilot-Integration-Id": "vscode-chat",
 };

@@ -13,8 +13,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform": "^0.93.6",
-    "@effect/platform-node": "^0.102.0",
     "effect": "^3.19.8",
     "gpt-tokenizer": "^2.9.0",
     "shiki": "^3.17.0"

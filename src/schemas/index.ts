@@ -1,3 +1,5 @@
+// Schema is part of the core `effect` package (since v3.x).
+// No need for the separate `@effect/schema` package.
 import { Schema } from "effect";
 
 export class DeviceCodeResponse extends Schema.Class<DeviceCodeResponse>(

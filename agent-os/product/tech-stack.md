@@ -29,18 +29,7 @@ The Effect-TS library forms the architectural foundation. Unlike traditional Pro
 - Generator-based composition eliminates callback hell
 - Typed error channels ensure exhaustive error handling
 - Resource management via acquireRelease patterns
-
-**@effect/platform & @effect/platform-node**
-- FileSystem abstractions with proper error types
-- Command execution with typed failures
-- Path manipulation utilities
-- Platform-specific implementations for Node/Bun
-
-**@effect/schema (0.75.5+)**
-- Runtime type validation at system boundaries
-- API response validation prevents ParseErrors
-- Configuration file decoding with typed errors
-- Automatic serialization/deserialization
+- Includes Schema (since v3.x) for runtime type validation—no separate `@effect/schema` package needed. Used for API response validation, configuration decoding, and typed serialization (see `src/schemas/index.ts`)
 
 ### Dependencies
 
@@ -49,7 +38,7 @@ The Effect-TS library forms the architectural foundation. Unlike traditional Pro
 - Critical for staying within API limits (4K-128K tokens)
 - Fast pure computation, no async overhead
 
-Total direct dependencies: 5 (effect, @effect/platform, @effect/platform-node, @effect/schema, gpt-tokenizer)
+Total direct dependencies: 3 (effect, gpt-tokenizer, shiki)
 
 ### Development Tools
 
@@ -191,7 +180,7 @@ Optimizations:
 
 ### Dependencies
 
-- Minimal dependency tree (5 direct deps)
+- Minimal dependency tree (3 direct deps)
 - Regular security audits via `bun audit`
 - No native addons (pure TypeScript/JavaScript)
 - Effect ecosystem actively maintained

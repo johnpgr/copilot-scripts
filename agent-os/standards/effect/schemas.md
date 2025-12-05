@@ -140,7 +140,10 @@ const ConfigSchema = Schema.Struct({
 })
 
 const loadConfig = Effect.gen(function* () {
-  const raw = yield* Effect.tryPromise(() => Bun.file("config.json").json())
+  const text = yield* Effect.tryPromise(() =>
+    fs.readFile("config.json", "utf8")
+  )
+  const raw = JSON.parse(text)
   return yield* Schema.decodeUnknown(ConfigSchema)(raw)
 })
 ```
