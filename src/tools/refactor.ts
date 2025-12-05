@@ -7,8 +7,9 @@ import { CopilotChatInstance } from "../core/chat-instance.ts";
 import { ModelResolver } from "../core/model-resolver.ts";
 import { fetchModels } from "../api/models.ts";
 import { CopilotService } from "../services/CopilotService.ts";
-import { FileSystem } from "../services/FileSystemService.ts";
-import { RuntimeServices } from "../runtime.ts";
+import { FileSystemService, type FileSystem } from "../services/FileSystemService.ts";
+import { type FsError } from "../errors/index.ts";
+import { AppLayer } from "../runtime.ts";
 import { countTokens } from "../utils/tokenizer.ts";
 
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
@@ -68,7 +69,11 @@ Rules:
 - You may also add new files with <write file="path">...</write>.
 - To delete a file, emit <delete file="path" />.
 - Do not rewrite unchanged blocks.
-- Do not wrap the output in markdown code blocks (e.g. \`\`\`xml).
+- Do not wrap the output in markdown code blocks (e.g. 
+---
+xml
+---
+).
 - After all commands, append a <summary> ... </summary> block explaining the changes.
 - Return only the commands and the summary; no conversational filler.`;
 
@@ -117,36 +122,31 @@ interface DeleteCommand {
 
 type EditCommand = PatchCommand | WriteCommand | DeleteCommand;
 
-async function main() {
+const main = Effect.gen(function* (_) {
   const filePath = process.argv[2];
   const modelSpec = process.argv[3] || "g";
 
   if (!filePath) {
     console.error("Usage: refactor <file> [<model>]");
-    process.exit(1);
+    return process.exit(1);
   }
 
-  const services = RuntimeServices.create();
-  const fs: FileSystem = services.fs;
-  const copilot: CopilotService = services.copilot;
+  const fs = yield* _(FileSystemService);
+  const copilot = yield* _(CopilotService);
 
   const root = process.cwd();
   const absEntryPath = path.resolve(root, filePath);
 
   // 1. Read entry file and extract prompt
-  const entryContent = await Effect.runPromise(fs.readFile(absEntryPath));
+  const entryContent = yield* _(fs.readFile(absEntryPath));
   const { body: fileBody, prompt: taskPrompt } =
     extractPromptSections(entryContent);
 
   // 2. Collect context (recursive imports)
-  const files = await Effect.runPromise(
-    collectContext(fs, absEntryPath, fileBody, root),
-  );
+  const files = yield* _(collectContext(fs, absEntryPath, fileBody, root));
 
   // 2b. Find referrers (reverse dependencies) using ripgrep
-  const referrers = await Effect.runPromise(
-    findReferrers(fs, absEntryPath, root),
-  );
+  const referrers = yield* _(findReferrers(fs, absEntryPath, root));
 
   for (const [relPath, content] of referrers) {
     if (!files.has(relPath)) {
@@ -165,11 +165,9 @@ async function main() {
 
   // 4. Resolve model
   console.log("Resolving model...");
-  const resolver = await Effect.runPromise(
-    ModelResolver.make(services.copilot, services.fs),
-  );
+  const resolver = yield* _(ModelResolver.make());
   console.log("Resolver created.");
-  const model = await Effect.runPromise(resolver.resolve(modelSpec));
+  const model = yield* _(resolver.resolve(modelSpec));
   console.log(`Model resolved: ${model.id}`);
 
   // 5. Compacting Phase (if needed)
@@ -180,7 +178,7 @@ async function main() {
     console.log("\n[Compacting phase...]");
 
     // Try to find a faster/cheaper model for compaction
-    const allModels = await Effect.runPromise(fetchModels(copilot));
+    const allModels = yield* _(fetchModels);
     const compactorCandidates = ["mini", "turbo", "haiku", "flash"];
     const fastModel =
       allModels.find((m) =>
@@ -195,9 +193,7 @@ async function main() {
       fullContext,
     ).replace("{TASK}", taskPrompt);
 
-    const response = await Effect.runPromise(
-      chat.ask(compactingPrompt, { stream: true }),
-    );
+    const response = yield* _(chat.ask(compactingPrompt, { stream: true }));
 
     const omittedIds = parseOmitCommands(response);
     console.log(`\nOmitted ${omittedIds.size} irrelevant blocks`);
@@ -215,19 +211,17 @@ async function main() {
   ).replace("{TASK}", taskPrompt);
 
   const chat = new CopilotChatInstance(copilot, model);
-  const response = await Effect.runPromise(
-    chat.ask(editingPrompt, { stream: true }),
-  );
+  const response = yield* _(chat.ask(editingPrompt, { stream: true }));
 
   // 7. Apply changes
   const commands = parseCommands(response);
-  const messages = await applyCommands(commands, blockState, fs);
+  const messages = yield* _(applyCommands(commands, blockState, fs));
 
   console.log("\n✓ Refactor complete");
   if (messages.length > 0) {
     console.log(messages.join("\n"));
   }
-}
+});
 
 // --- Reverse Dependency Search ---
 
@@ -237,45 +231,55 @@ function findReferrers(
   fs: FileSystem,
   targetAbsPath: string,
   root: string,
-): Effect.Effect<Map<string, string>, any> {
+) {
   return Effect.gen(function* (_) {
     const referrers = new Map<string, string>();
     const filename = path.basename(targetAbsPath);
     const nameNoExt = filename.replace(/\.[^/.]+$/, "");
-    
-    // Heuristic: search for import statements containing the filename (without extension)
+
     const regex = `(from|import|require).*['"].*${nameNoExt}['"]`;
 
-    try {
-      // Check if rg exists
-      yield* _(Effect.tryPromise(() => execFileAsync("rg", ["--version"])));
-      
-      // Run rg
-      const { stdout } = yield* _(
-        Effect.tryPromise(() =>
-          execFileAsync("rg", ["-l", regex, "."], {
-            cwd: root,
-            maxBuffer: 1024 * 1024 * 10,
+    yield* _(
+      Effect.tryPromise({
+        try: () => execFileAsync("rg", ["--version"]),
+        catch: () => new Error("rg not found"),
+      }).pipe(
+        Effect.flatMap(() =>
+          Effect.tryPromise({
+            try: () =>
+              execFileAsync("rg", ["-l", regex, "."], {
+                cwd: root,
+                maxBuffer: 1024 * 1024 * 10,
+              }),
+            catch: () => new Error("rg failed"),
           }),
-        ).pipe(Effect.catchAll(() => Effect.succeed({ stdout: "" }))),
-      );
+        ),
+        Effect.map(({ stdout }) => {
+          const lines = stdout
+            .split("\n")
+            .map((l) => l.trim())
+            .filter((l) => l);
+          return lines;
+        }),
+        Effect.flatMap((lines) =>
+          Effect.forEach(lines, (relPath) =>
+            Effect.gen(function* (_) {
+              const absPath = path.resolve(root, relPath);
+              if (absPath === targetAbsPath) return;
 
-      const lines = stdout.split("\n").map(l => l.trim()).filter(l => l);
-      
-      for (const relPath of lines) {
-        const absPath = path.resolve(root, relPath);
-        if (absPath === targetAbsPath) continue; // Skip self
-        
-        // Check if it's likely a source file
-        if (!relPath.match(/\.(ts|js|tsx|jsx|py|rb|go|rs|cpp|h|c|java)$/)) continue;
+              if (
+                !relPath.match(/\.(ts|js|tsx|jsx|py|rb|go|rs|cpp|h|c|java)$/)
+              )
+                return;
 
-        const content = yield* _(fs.readFile(absPath));
-        referrers.set(relPath, content);
-      }
-    } catch (err) {
-      // Ignore errors (e.g. rg not found, or no matches)
-      // console.log("Ripgrep failed or not found, skipping reverse dependency search.");
-    }
+              const content = yield* _(fs.readFile(absPath));
+              referrers.set(relPath, content);
+            }),
+          ),
+        ),
+        Effect.catchAll(() => Effect.void),
+      ),
+    );
 
     return referrers;
   });
@@ -318,7 +322,7 @@ function collectContext(
     const visit = (
       currentPath: string,
       content: string | null,
-    ): Effect.Effect<void, any> =>
+    ): Effect.Effect<void, FsError> =>
       Effect.gen(function* (_) {
         let finalPath = path.resolve(currentPath);
         let text = content;
@@ -327,7 +331,6 @@ function collectContext(
         if (text === null) {
           exists = yield* _(fs.exists(finalPath));
           if (!exists) {
-            // Try extensions
             const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
             for (const ext of extensions) {
               const p = finalPath + ext;
@@ -375,14 +378,12 @@ function extractPromptSections(raw: string): { body: string; prompt: string } {
   const lines = raw.split("\n");
   let idx = lines.length - 1;
 
-  // Skip trailing blank lines
   while (idx >= 0 && lines[idx].trim() === "") {
     idx--;
   }
 
   const promptLines: string[] = [];
 
-  // Read comment block from bottom
   while (idx >= 0) {
     const line = lines[idx];
     const trimmed = line.trim();
@@ -401,7 +402,6 @@ function extractPromptSections(raw: string): { body: string; prompt: string } {
   }
 
   if (promptLines.length === 0) {
-    // Fallback if no explicit prompt block found
     return { body: raw, prompt: "Apply the requested changes." };
   }
 
@@ -419,7 +419,6 @@ function buildBlockState(files: Map<string, string>): BlockState {
   const blockMap = new Map<number, BlockEntry>();
 
   for (const [file, content] of files.entries()) {
-    // Split by double newlines, keeping indentation/content reasonably
     const rawBlocks = content.split(/\n\n+/).filter((b) => b.trim());
     const blocks: BlockEntry[] = [];
 
@@ -439,9 +438,7 @@ function formatBlocks(state: BlockState, omit?: Set<number>): string {
   const parts: string[] = [];
 
   for (const group of state.files) {
-    const visibleBlocks = group.blocks.filter(
-      (b) => !omit || !omit.has(b.id),
-    );
+    const visibleBlocks = group.blocks.filter((b) => !omit || !omit.has(b.id));
 
     if (visibleBlocks.length === 0 && omit && omit.size > 0) continue;
 
@@ -449,7 +446,7 @@ function formatBlocks(state: BlockState, omit?: Set<number>): string {
     for (const block of visibleBlocks) {
       parts.push(`!${block.id}\n${block.content}\n`);
     }
-    parts.push(""); // Extra spacing between files
+    parts.push("");
   }
 
   return parts.join("\n");
@@ -469,13 +466,8 @@ function parseOmitCommands(response: string): Set<number> {
     while ((rangeMatch = rangeRegex.exec(content)) !== null) {
       const start = parseInt(rangeMatch[1], 10);
       const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : start + 1;
-      
-      // Omit is inclusive in prompt text examples usually, but let's stick to 
-      // simple range parsing. If prompt says "100-103 omits 100, 101, 102", 
-      // that means end is exclusive.
-      // Let's match the prompt instructions: "use START-END (end exclusive)"
       const actualEnd = rangeMatch[2] ? end : start + 1;
-      
+
       for (let i = start; i < actualEnd; i++) {
         omitted.add(i);
       }
@@ -510,49 +502,49 @@ function parseCommands(response: string): EditCommand[] {
   return commands;
 }
 
-async function applyCommands(
+function applyCommands(
   commands: EditCommand[],
   state: BlockState,
   fs: FileSystem,
-): Promise<string[]> {
-  const messages: string[] = [];
-  const filePatches = new Map<string, Map<number, string>>();
+) {
+  return Effect.gen(function* (_) {
+    const messages: string[] = [];
+    const filePatches = new Map<string, Map<number, string>>();
 
-  // Process patches
-  for (const cmd of commands) {
-    if (cmd.type === "patch") {
-      const block = state.blockMap.get(cmd.blockId);
-      if (!block) continue;
-      if (!filePatches.has(block.file)) {
-        filePatches.set(block.file, new Map());
+    for (const cmd of commands) {
+      if (cmd.type === "patch") {
+        const block = state.blockMap.get(cmd.blockId);
+        if (!block) continue;
+        if (!filePatches.has(block.file)) {
+          filePatches.set(block.file, new Map());
+        }
+        filePatches.get(block.file)!.set(block.id, cmd.content);
+      } else if (cmd.type === "write") {
+        yield* _(fs.writeFile(cmd.file, cmd.content));
+        messages.push(`wrote ${cmd.file}`);
+      } else if (cmd.type === "delete") {
+        yield* _(fs.writeFile(cmd.file, ""));
+        messages.push(`deleted ${cmd.file}`);
       }
-      filePatches.get(block.file)!.set(block.id, cmd.content);
-    } else if (cmd.type === "write") {
-      await Effect.runPromise(fs.writeFile(cmd.file, cmd.content));
-      messages.push(`wrote ${cmd.file}`);
-    } else if (cmd.type === "delete") {
-      await Effect.runPromise(fs.writeFile(cmd.file, ""));
-      messages.push(`deleted ${cmd.file}`);
     }
-  }
 
-  // Apply patches to files
-  for (const [file, patches] of filePatches.entries()) {
-    const group = state.files.find((f) => f.file === file);
-    if (!group) continue;
+    for (const [file, patches] of filePatches.entries()) {
+      const group = state.files.find((f) => f.file === file);
+      if (!group) continue;
 
-    const updated = group.blocks
-      .map((b) => patches.get(b.id) ?? b.content)
-      .join("\n\n"); // Reconstruct with standard spacing
+      const updated = group.blocks
+        .map((b) => patches.get(b.id) ?? b.content)
+        .join("\n\n");
 
-    await Effect.runPromise(fs.writeFile(file, updated));
-    messages.push(`patched ${file}`);
-  }
+      yield* _(fs.writeFile(file, updated));
+      messages.push(`patched ${file}`);
+    }
 
-  return messages;
+    return messages;
+  });
 }
 
-main().catch((err) => {
+Effect.runPromise(main.pipe(Effect.provide(AppLayer))).catch((err) => {
   console.error(err);
   process.exit(1);
 });

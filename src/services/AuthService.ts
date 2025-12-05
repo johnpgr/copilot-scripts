@@ -1,82 +1,61 @@
-import path from "path";
-import * as Effect from "effect/Effect";
+import { Context, Effect, Layer, Option, Schedule, Schema } from "effect";
 import * as Duration from "effect/Duration";
-import { FileSystem } from "./FileSystemService.ts";
-import { AccessToken, BearerToken, DeviceCode, TokenCache } from "../schemas/index.ts";
+import { FileSystemService } from "./FileSystemService.ts";
+import { TokenStore } from "../auth/token-store.ts";
+import {
+  AccessTokenResponse,
+  BearerTokenResponse,
+  DeviceCodeResponse,
+} from "../schemas/index.ts";
 import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
-export interface AuthService {
-  getBearerToken: () => Effect.Effect<
+const CLIENT_ID = "Iv1.b507a08c87ecfe98";
+
+export interface Auth {
+  readonly getBearerToken: () => Effect.Effect<
     string,
     AuthError | ApiError | FsError | ParseError
   >;
 }
 
-export namespace AuthService {
-  const CONFIG_DIR = ".config/copilot-scripts";
-  const TOKEN_FILE = "tokens.json";
-  const CLIENT_ID = "Iv1.b507a08c87ecfe98";
+export class AuthService extends Context.Tag("@app/AuthService")< 
+  AuthService,
+  Auth
+>() {
+  static readonly layer = Layer.effect(
+    AuthService,
+    Effect.gen(function* () {
+      const fs = yield* FileSystemService;
+      const tokenStore = yield* TokenStore;
 
-  const loadCache = (fs: FileSystem) =>
-    Effect.gen(function* (_) {
-      const tokenPath = fs.join(process.env.HOME || "", CONFIG_DIR, TOKEN_FILE);
-      const exists = yield* _(fs.exists(tokenPath));
-      if (!exists) return null;
+      const findExistingToken = Effect.gen(function* () {
+        const home = process.env.HOME || "";
+        const configPaths = [
+          fs.join(home, ".config/github-copilot/hosts.json"),
+          fs.join(home, ".config/github-copilot/apps.json"),
+        ];
 
-      const text = yield* _(fs.readFile(tokenPath));
-      const raw = yield* _(
-        Effect.try({
-          try: () => JSON.parse(text),
-          catch: (err) => new ParseError(String(err)),
-        }),
-      );
-      const cache = yield* _(TokenCache.fromJson(raw));
-      return cache;
-    }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+        for (const configPath of configPaths) {
+          const exists = yield* fs.exists(configPath);
+          if (!exists) continue;
 
-  const saveCache = (fs: FileSystem, cache: TokenCache) =>
-    Effect.gen(function* (_) {
-      const baseDir = fs.join(process.env.HOME || "", CONFIG_DIR);
-      yield* _(fs.ensureDir(baseDir));
-      const tokenPath = path.join(baseDir, TOKEN_FILE);
-      const payload = JSON.stringify(cache, null, 2);
-      yield* _(fs.writeFile(tokenPath, payload));
-    });
-
-  const findExistingToken = (fs: FileSystem) =>
-    Effect.gen(function* (_) {
-      const home = process.env.HOME || "";
-      const configPaths = [
-        fs.join(home, ".config/github-copilot/hosts.json"),
-        fs.join(home, ".config/github-copilot/apps.json"),
-      ];
-
-      for (const configPath of configPaths) {
-        const exists = yield* _(fs.exists(configPath));
-        if (!exists) continue;
-
-        const text = yield* _(fs.readFile(configPath));
-        const raw = yield* _(
-          Effect.try({
+          const text = yield* fs.readFile(configPath);
+          const raw = yield* Effect.try({
             try: () => JSON.parse(text),
-            catch: (err) => new ParseError(String(err)),
-          }),
-        ).pipe(Effect.catchAll(() => Effect.succeed({} as any)));
+            catch: () => new ParseError("Failed to parse config"),
+          }).pipe(Effect.catchAll(() => Effect.succeed({} as any)));
 
-        for (const [key, value] of Object.entries<any>(raw)) {
-          if (key.includes("github.com") && value?.oauth_token) {
-            return value.oauth_token as string;
+          for (const [key, value] of Object.entries<any>(raw)) {
+            if (key.includes("github.com") && value?.oauth_token) {
+              return value.oauth_token as string;
+            }
           }
         }
-      }
+        return null;
+      });
 
-      return null;
-    }).pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-  const deviceFlow = () =>
-    Effect.gen(function* (_) {
-      const response = yield* _(
-        Effect.tryPromise({
+      const deviceFlow = Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
           try: () =>
             fetch("https://github.com/login/device/code", {
               method: "POST",
@@ -87,140 +66,136 @@ export namespace AuthService {
               body: JSON.stringify({ client_id: CLIENT_ID, scope: "" }),
             }),
           catch: (err) => new AuthError(String(err)),
-        }),
-      );
-
-      if (!response.ok) {
-        return yield* _(
-          Effect.fail(
-            new AuthError(`Failed to start device flow: ${response.status}`),
-          ),
-        );
-      }
-
-      const device = yield* _(
-        Effect.tryPromise({
-          try: () => response.json(),
-          catch: (err) => new ParseError(String(err)),
-        }).pipe(Effect.flatMap((json) => DeviceCode.fromJson(json))),
-      );
-
-      console.log(
-        `\nVisit ${device.verificationUri} and enter code: ${device.userCode}\n`,
-      );
-      console.log("Waiting for authorization...");
-
-      const poll = (): Effect.Effect<
-        string,
-        AuthError | ApiError | ParseError
-      > =>
-        Effect.gen(function* (_) {
-          const pollResponse = yield* _(
-            Effect.tryPromise({
-              try: () =>
-                fetch("https://github.com/login/oauth/access_token", {
-                  method: "POST",
-                  headers: { Accept: "application/json" },
-                  body: JSON.stringify({
-                    client_id: CLIENT_ID,
-                    device_code: device.deviceCode,
-                    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-                  }),
-                }),
-              catch: (err) => new ApiError(String(err)),
-            }),
-          );
-
-          if (!pollResponse.ok) {
-            return yield* _(
-              Effect.fail(new AuthError(`Auth error: ${pollResponse.status}`)),
-            );
-          }
-
-          const data = yield* _(
-            Effect.tryPromise({
-              try: () => pollResponse.json(),
-              catch: (err) => new ParseError(String(err)),
-            }).pipe(Effect.flatMap((json) => AccessToken.fromJson(json))),
-          );
-
-          if (data.accessToken) return data.accessToken;
-          if (data.error && data.error !== "authorization_pending") {
-            return yield* _(
-              Effect.fail(new AuthError(`Auth error: ${data.error}`)),
-            );
-          }
-
-          yield* _(Effect.sleep(Duration.seconds(device.interval ?? 5)));
-          return yield* _(poll());
         });
 
-      return yield* _(poll());
-    });
+        if (!response.ok) {
+          return yield* Effect.fail(
+            new AuthError(`Failed to start device flow: ${response.status}`),
+          );
+        }
 
-  const getBearerToken = (oauthToken: string) =>
-    Effect.gen(function* (_) {
-      const response = yield* _(
-        Effect.tryPromise({
-          try: () =>
-            fetch("https://api.github.com/copilot_internal/v2/token", {
-              headers: { Authorization: `Token ${oauthToken}` },
-            }),
-          catch: (err) => new ApiError(String(err)),
-        }),
-      );
-
-      if (!response.ok) {
-        return yield* _(
-          Effect.fail(
-            new ApiError(`Failed to get bearer token: ${response.status}`),
-          ),
-        );
-      }
-
-      const data = yield* _(
-        Effect.tryPromise({
+        const json = yield* Effect.tryPromise({
           try: () => response.json(),
-          catch: (err) => new ParseError(String(err)),
-        }).pipe(Effect.flatMap((json) => BearerToken.fromJson(json))),
-      );
-
-      return data;
-    });
-
-  export function create(fs: FileSystem): AuthService {
-    const getBearerTokenEffect: AuthService["getBearerToken"] = () =>
-      Effect.gen(function* (_) {
-        const cached = yield* _(loadCache(fs));
-        const nowSeconds = Date.now() / 1000;
-        if (
-          cached?.bearerToken &&
-          cached?.expiresAt &&
-          cached.expiresAt > nowSeconds
-        ) {
-          return cached.bearerToken;
-        }
-
-        let oauthToken: string | undefined = cached?.oauthToken ?? undefined;
-        if (!oauthToken) {
-          const existing = yield* _(findExistingToken(fs));
-          if (existing) oauthToken = existing;
-        }
-        if (!oauthToken) {
-          oauthToken = yield* _(deviceFlow());
-          yield* _(saveCache(fs, new TokenCache(oauthToken)));
-        }
-
-        const bearer = yield* _(getBearerToken(oauthToken));
-        yield* _(
-          saveCache(
-            fs,
-            new TokenCache(oauthToken, bearer.token, bearer.expiresAt),
-          ),
+          catch: (e) => new ParseError(String(e)),
+        });
+        const device = yield* Schema.decodeUnknown(DeviceCodeResponse)(json).pipe(
+          Effect.mapError((e) => new ParseError(String(e))),
         );
-        return bearer.token;
+
+        console.log(
+          `\nVisit ${device.verification_uri} and enter code: ${device.user_code}\n`,
+        );
+        console.log("Waiting for authorization...");
+
+        const poll = Effect.gen(function* () {
+          const pollRes = yield* Effect.tryPromise({
+            try: () =>
+              fetch("https://github.com/login/oauth/access_token", {
+                method: "POST",
+                headers: { Accept: "application/json" },
+                body: JSON.stringify({
+                  client_id: CLIENT_ID,
+                  device_code: device.device_code,
+                  grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+                }),
+              }),
+            catch: (e) => new ApiError(String(e)),
+          });
+
+          if (!pollRes.ok) {
+            return yield* Effect.fail(new AuthError(`Auth error: ${pollRes.status}`));
+          }
+
+          const pollJson = yield* Effect.tryPromise({
+            try: () => pollRes.json(),
+            catch: (e) => new ParseError(String(e)),
+          });
+          const data = yield* Schema.decodeUnknown(AccessTokenResponse)(pollJson).pipe(
+            Effect.mapError((e) => new ParseError(String(e))),
+          );
+
+          if (data.access_token) return data.access_token;
+
+          if (data.error === "authorization_pending") {
+            return yield* Effect.fail(new AuthError("authorization_pending"));
+          }
+
+          return yield* Effect.fail(
+            new AuthError(
+              `Auth error: ${data.error_description || data.error}`,
+            ),
+          );
+        });
+
+        const policy = Schedule.spaced(Duration.seconds(device.interval));
+
+        return yield* poll.pipe(
+          Effect.retry({
+            while: (err) =>
+              err instanceof AuthError &&
+              err.message === "authorization_pending",
+            schedule: policy,
+          }),
+        );
       });
 
-    return { getBearerToken: getBearerTokenEffect };
-  }
+      const fetchBearerToken = (oauthToken: string) =>
+        Effect.gen(function* () {
+          const res = yield* Effect.tryPromise({
+            try: () =>
+              fetch("https://api.github.com/copilot_internal/v2/token", {
+                headers: { Authorization: `Token ${oauthToken}` },
+              }),
+            catch: (e) => new ApiError(String(e)),
+          });
+
+          if (!res.ok)
+            return yield* Effect.fail(
+              new ApiError(`Failed to get bearer: ${res.status}`),
+            );
+
+          const json = yield* Effect.tryPromise({
+            try: () => res.json(),
+            catch: (e) => new ParseError(String(e)),
+          });
+          return yield* Schema.decodeUnknown(BearerTokenResponse)(json).pipe(
+            Effect.mapError((e) => new ParseError(String(e))),
+          );
+        });
+
+      const getBearerToken = () =>
+        Effect.gen(function* () {
+          const cachedOpt = yield* tokenStore.load();
+          const cached = Option.getOrNull(cachedOpt);
+          const now = Date.now() / 1000;
+
+          if (
+            cached?.bearer_token &&
+            cached?.expires_at &&
+            cached.expires_at > now
+          ) {
+            return cached.bearer_token;
+          }
+
+          let oauthToken = cached?.oauth_token;
+
+          if (!oauthToken) {
+            const existing = yield* findExistingToken;
+            if (existing) oauthToken = existing;
+          }
+
+          if (!oauthToken) {
+            oauthToken = yield* deviceFlow;
+            yield* tokenStore.saveOAuthToken(oauthToken);
+          }
+
+          const bearer = yield* fetchBearerToken(oauthToken);
+          yield* tokenStore.saveBearerToken(bearer.token, bearer.expires_at);
+
+          return bearer.token;
+        });
+
+      return AuthService.of({ getBearerToken });
+    }),
+  );
 }

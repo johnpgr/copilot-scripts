@@ -1,112 +1,66 @@
-import * as S from "effect/Schema";
-import * as Effect from "effect/Effect";
-import { ParseError } from "../errors/index.ts";
+import { Schema } from "effect";
 
-const format = (err: unknown) =>
-  typeof err === "string" ? err : JSON.stringify(err);
+export class DeviceCodeResponse extends Schema.Class<DeviceCodeResponse>(
+  "DeviceCodeResponse",
+)({
+  device_code: Schema.String,
+  user_code: Schema.String,
+  verification_uri: Schema.String,
+  interval: Schema.optionalWith(Schema.Number, { default: () => 5 }),
+}) {}
 
-export class DeviceCode {
-  constructor(
-    public deviceCode: string,
-    public userCode: string,
-    public verificationUri: string,
-    public interval: number,
-  ) {}
+export class AccessTokenResponse extends Schema.Class<AccessTokenResponse>(
+  "AccessTokenResponse",
+)({
+  access_token: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  error_description: Schema.optional(Schema.String),
+}) {}
 
-  static Schema = S.Struct({
-    device_code: S.String,
-    user_code: S.String,
-    verification_uri: S.String,
-    interval: S.optional(S.Number),
-  });
+export class BearerTokenResponse extends Schema.Class<BearerTokenResponse>(
+  "BearerTokenResponse",
+)({
+  token: Schema.String,
+  expires_at: Schema.Number,
+}) {}
 
-  static fromJson(data: unknown) {
-    return Effect.map(
-      Effect.mapError(
-        S.decodeUnknown(DeviceCode.Schema)(data),
-        (err) => new ParseError(format(err)),
-      ),
-      (parsed: any) =>
-        new DeviceCode(
-          parsed.device_code,
-          parsed.user_code,
-          parsed.verification_uri,
-          parsed.interval ?? 5,
-        ),
-    );
-  }
-}
+export class TokenCacheSchema extends Schema.Class<TokenCacheSchema>(
+  "TokenCacheSchema",
+)({
+  oauth_token: Schema.optional(Schema.String),
+  bearer_token: Schema.optional(Schema.String),
+  expires_at: Schema.optional(Schema.Number),
+}) {}
 
-export class AccessToken {
-  constructor(
-    public accessToken?: string,
-    public error?: string,
-  ) {}
+export class ModelLimits extends Schema.Class<ModelLimits>("ModelLimits")({
+  max_prompt_tokens: Schema.optional(Schema.Number),
+  max_output_tokens: Schema.optional(Schema.Number),
+}) {}
 
-  static Schema = S.Struct({
-    access_token: S.optional(S.String),
-    error: S.optional(S.String),
-  });
+export class ModelSupports extends Schema.Class<ModelSupports>("ModelSupports")({
+  streaming: Schema.optional(Schema.Boolean),
+  tool_calls: Schema.optional(Schema.Boolean),
+}) {}
 
-  static fromJson(data: unknown) {
-    return Effect.map(
-      Effect.mapError(
-        S.decodeUnknown(AccessToken.Schema)(data),
-        (err) => new ParseError(format(err)),
-      ),
-      (parsed: any) => new AccessToken(parsed.access_token, parsed.error),
-    );
-  }
-}
+export class ModelCapabilities extends Schema.Class<ModelCapabilities>(
+  "ModelCapabilities",
+)({
+  type: Schema.optional(Schema.String),
+  tokenizer: Schema.optional(Schema.String),
+  limits: Schema.optional(ModelLimits),
+  supports: Schema.optional(ModelSupports),
+}) {}
 
-export class BearerToken {
-  constructor(
-    public token: string,
-    public expiresAt: number,
-  ) {}
+export class ModelEntry extends Schema.Class<ModelEntry>("ModelEntry")({
+  id: Schema.String,
+  name: Schema.String,
+  model_picker_enabled: Schema.optional(Schema.Boolean),
+  capabilities: Schema.optional(ModelCapabilities),
+  supported_endpoints: Schema.optional(Schema.Array(Schema.String)),
+}) {}
 
-  static Schema = S.Struct({
-    token: S.String,
-    expires_at: S.Number,
-  });
-
-  static fromJson(data: unknown) {
-    return Effect.map(
-      Effect.mapError(
-        S.decodeUnknown(BearerToken.Schema)(data),
-        (err) => new ParseError(format(err)),
-      ),
-      (parsed: any) => new BearerToken(parsed.token, parsed.expires_at),
-    );
-  }
-}
-
-export class TokenCache {
-  constructor(
-    public oauthToken?: string,
-    public bearerToken?: string,
-    public expiresAt?: number,
-  ) {}
-
-  static Schema = S.Struct({
-    oauth_token: S.optional(S.String),
-    bearer_token: S.optional(S.String),
-    expires_at: S.optional(S.Number),
-  });
-
-  static fromJson(data: unknown) {
-    return Effect.map(
-      Effect.mapError(
-        S.decodeUnknown(TokenCache.Schema)(data),
-        (err) => new ParseError(format(err)),
-      ),
-      (parsed: any) =>
-        new TokenCache(
-          parsed.oauth_token,
-          parsed.bearer_token,
-          parsed.expires_at,
-        ),
-    );
-  }
-}
-
+export class ModelsResponse extends Schema.Class<ModelsResponse>(
+  "ModelsResponse",
+)({
+  data: Schema.Array(ModelEntry),
+}) {}

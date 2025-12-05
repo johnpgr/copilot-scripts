@@ -1,30 +1,34 @@
+import { Context, Effect, Layer } from "effect";
 import { access, appendFile, mkdir, readFile, writeFile } from "fs/promises";
 import { constants } from "fs";
 import path from "path";
-import * as Effect from "effect/Effect";
 import { FsError } from "../errors/index.ts";
 
 export interface FileSystem {
-  readFile: (
+  readonly readFile: (
     filePath: string,
     encoding?: BufferEncoding,
   ) => Effect.Effect<string, FsError>;
-  writeFile: (
+  readonly writeFile: (
     filePath: string,
     contents: string,
   ) => Effect.Effect<void, FsError>;
-  appendFile: (
+  readonly appendFile: (
     filePath: string,
     contents: string,
   ) => Effect.Effect<void, FsError>;
-  ensureDir: (dirPath: string) => Effect.Effect<void, FsError>;
-  exists: (filePath: string) => Effect.Effect<boolean, never>;
-  join: (...segments: string[]) => string;
+  readonly ensureDir: (dirPath: string) => Effect.Effect<void, FsError>;
+  readonly exists: (filePath: string) => Effect.Effect<boolean>;
+  readonly join: (...segments: string[]) => string;
 }
 
-export namespace FileSystem {
-  export function create(): FileSystem {
-    return {
+export class FileSystemService extends Context.Tag("@app/FileSystemService")<
+  FileSystemService,
+  FileSystem
+>() {
+  static readonly layer = Layer.succeed(
+    FileSystemService,
+    FileSystemService.of({
       readFile: (filePath, encoding = "utf8") =>
         Effect.tryPromise({
           try: () => readFile(filePath, { encoding }) as Promise<string>,
@@ -50,19 +54,12 @@ export namespace FileSystem {
         }),
 
       exists: (filePath) =>
-        Effect.tryPromise({
-          try: async () => {
-            try {
-              await access(filePath, constants.F_OK);
-              return true;
-            } catch {
-              return false;
-            }
-          },
-          catch: () => false,
-        }).pipe(Effect.orElseSucceed(() => false)),
+        Effect.tryPromise(() => access(filePath, constants.F_OK)).pipe(
+          Effect.as(true),
+          Effect.catchAll(() => Effect.succeed(false)),
+        ),
 
       join: (...segments: string[]) => path.join(...segments),
-    };
-  }
+    }),
+  );
 }

@@ -3,8 +3,11 @@ import * as Option from "effect/Option";
 import * as Readline from "node:readline";
 import path from "path";
 import { fetchModels, type CopilotModel } from "../api/models.ts";
-import { CopilotService } from "../services/CopilotService.ts";
-import { FileSystem } from "../services/FileSystemService.ts";
+import { CopilotService, type Copilot } from "../services/CopilotService.ts";
+import {
+  FileSystemService,
+  type FileSystem,
+} from "../services/FileSystemService.ts";
 import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
 type ShortcutKey = "g" | "c" | "i" | "o";
@@ -20,16 +23,18 @@ const SHORTCUT_PATTERNS: Record<ShortcutKey, RegExp> = {
 const CONFIG_DIR = ".config/copilot-scripts";
 const SHORTCUT_FILE = "model-shortcuts.json";
 
-type ModelFetcher = (
-  copilot: CopilotService,
-) => Effect.Effect<CopilotModel[], ApiError | AuthError | FsError | ParseError>;
+type ModelFetcher = Effect.Effect<
+  CopilotModel[],
+  ApiError | AuthError | FsError | ParseError,
+  CopilotService
+>;
 
 export class ModelResolver {
   private cache: { models: CopilotModel[]; expiresAt: number } | null = null;
   private shortcuts: ShortcutConfig;
 
   private constructor(
-    private copilot: CopilotService,
+    private copilot: Copilot,
     _fs: FileSystem,
     shortcuts: ShortcutConfig,
     private fetcher: ModelFetcher,
@@ -38,20 +43,29 @@ export class ModelResolver {
   }
 
   static make(
-    copilot: CopilotService,
-    fs: FileSystem,
     options: {
       shortcuts?: ShortcutConfig;
       skipPrompt?: boolean;
       fetcher?: ModelFetcher;
     } = {},
-  ): Effect.Effect<ModelResolver, ApiError | AuthError | FsError | ParseError> {
+  ): Effect.Effect<
+    ModelResolver,
+    ApiError | AuthError | FsError | ParseError,
+    CopilotService | FileSystemService
+  > {
     return Effect.gen(function* (_) {
+      const copilot = yield* _(CopilotService);
+      const fs = yield* _(FileSystemService);
       const fetcher = options.fetcher ?? fetchModels;
-      const models = yield* _(fetcher(copilot));
+
+      // Provide the CopilotService tag to the fetcher here, 
+      // so we can execute it now to get the initial models list.
+      const models = yield* _(fetcher);
+
       const shortcuts = options.skipPrompt
         ? options.shortcuts ?? {}
         : yield* _(loadOrConfigureShortcuts(fs, models));
+
       const resolver = new ModelResolver(copilot, fs, shortcuts, fetcher);
       resolver.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
       return resolver;
@@ -67,7 +81,7 @@ export class ModelResolver {
   }
 
   static createForTesting(
-    copilot: CopilotService,
+    copilot: Copilot,
     fs: FileSystem,
     models: CopilotModel[],
     shortcuts: ShortcutConfig = {},
@@ -123,13 +137,24 @@ export class ModelResolver {
       return Effect.succeed(this.cache.models);
     }
 
-    return Effect.map(this.fetcher(this.copilot), (models) => {
-      this.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
-      return models;
-    });
+    // The fetcher needs CopilotService in its context. 
+    // We have 'this.copilot' which is the service interface (value).
+    // We provide it as a service to fulfill the requirement.
+    return Effect.map(
+      this.fetcher.pipe(
+        Effect.provideService(CopilotService, CopilotService.of(this.copilot)),
+      ),
+      (models) => {
+        this.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
+        return models;
+      },
+    );
   }
 
-  listModels(): Effect.Effect<CopilotModel[], ApiError | AuthError | FsError | ParseError> {
+  listModels(): Effect.Effect<
+    CopilotModel[],
+    ApiError | AuthError | FsError | ParseError
+  > {
     return this.getModels();
   }
 

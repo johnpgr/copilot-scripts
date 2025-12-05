@@ -1,49 +1,84 @@
-import { mkdir } from "fs/promises";
-import path from "path";
+import { Context, Effect, Layer, Option, Schema } from "effect";
+import { FileSystemService } from "../services/FileSystemService.ts";
+import { TokenCacheSchema } from "../schemas/index.ts";
+import { FsError, ParseError } from "../errors/index.ts";
 
-const CONFIG_DIR = path.join(process.env.HOME || "", ".config/copilot-scripts");
-const TOKEN_PATH = path.join(CONFIG_DIR, "tokens.json");
-
-export interface TokenCache {
-  oauth_token?: string;
-  bearer_token?: string;
-  expires_at?: number;
+export interface TokenStorage {
+  readonly load: () => Effect.Effect<
+    Option.Option<TokenCacheSchema>,
+    FsError | ParseError
+  >;
+  readonly saveOAuthToken: (
+    token: string,
+  ) => Effect.Effect<void, FsError | ParseError>;
+  readonly saveBearerToken: (
+    token: string,
+    expiresAt: number,
+  ) => Effect.Effect<void, FsError | ParseError>;
 }
 
-async function ensureConfigDir() {
-  await mkdir(CONFIG_DIR, { recursive: true });
-}
+export class TokenStore extends Context.Tag("@app/TokenStore")<
+  TokenStore,
+  TokenStorage
+>() {
+  static readonly layer = Layer.effect(
+    TokenStore,
+    Effect.gen(function* () {
+      const fs = yield* FileSystemService;
+      const homeDir = process.env.HOME || "";
+      const configDir = fs.join(homeDir, ".config", "copilot-scripts");
+      const tokenPath = fs.join(configDir, "tokens.json");
 
-export async function loadCachedToken(): Promise<TokenCache | null> {
-  try {
-    return await Bun.file(TOKEN_PATH).json();
-  } catch {
-    return null;
-  }
-}
+      const ensureConfigDir = fs.ensureDir(configDir);
 
-export async function saveBearerToken(bearer: {
-  token: string;
-  expires_at: number;
-}): Promise<void> {
-  await ensureConfigDir();
+      const load = () =>
+        Effect.gen(function* () {
+          const exists = yield* fs.exists(tokenPath);
+          if (!exists) return Option.none();
 
-  const payload: TokenCache = {
-    bearer_token: bearer.token,
-    expires_at: bearer.expires_at,
-  };
+          const content = yield* fs.readFile(tokenPath);
+          const jsonSchema = Schema.parseJson(TokenCacheSchema);
 
-  await Bun.write(TOKEN_PATH, JSON.stringify(payload, null, 2));
-}
+          const data = yield* Schema.decodeUnknown(jsonSchema)(content).pipe(
+            Effect.mapError((e) => new ParseError(String(e))),
+          );
+          return Option.some(data);
+        });
 
-export async function saveOAuthToken(token: string): Promise<void> {
-  await ensureConfigDir();
-  const existing = (await loadCachedToken()) || {};
+      const save = (updater: (prev: TokenCacheSchema) => TokenCacheSchema) =>
+        Effect.gen(function* () {
+          yield* ensureConfigDir;
+          const current = yield* load().pipe(
+            Effect.catchTag("ParseError", () =>
+              Effect.succeed(Option.none()),
+            ),
+            Effect.catchTag("FsError", () => Effect.succeed(Option.none())),
+          );
 
-  const payload: TokenCache = {
-    ...existing,
-    oauth_token: token,
-  };
+          const empty = new TokenCacheSchema({});
+          const prev = Option.getOrElse(current, () => empty);
+          const next = updater(prev);
 
-  await Bun.write(TOKEN_PATH, JSON.stringify(payload, null, 2));
+          const json = yield* Schema.encode(Schema.parseJson(TokenCacheSchema))(next).pipe(
+            Effect.mapError((e) => new ParseError(String(e))),
+          );
+
+          yield* fs.writeFile(tokenPath, json);
+        });
+
+      const saveOAuthToken = (token: string) =>
+        save((prev) => new TokenCacheSchema({ ...prev, oauth_token: token }));
+
+      const saveBearerToken = (token: string, expiresAt: number) =>
+        save((prev) =>
+          new TokenCacheSchema({
+            ...prev,
+            bearer_token: token,
+            expires_at: expiresAt,
+          }),
+        );
+
+      return TokenStore.of({ load, saveOAuthToken, saveBearerToken });
+    }),
+  );
 }

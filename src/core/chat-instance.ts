@@ -2,8 +2,14 @@ import * as Stream from "effect/Stream";
 import * as Effect from "effect/Effect";
 import { chatStream, type ChatMessage } from "../api/chat.ts";
 import type { CopilotModel } from "../api/models.ts";
-import { CopilotService } from "../services/CopilotService.ts";
-import { ApiError, AuthError, FsError, ParseError, HighlightError } from "../errors/index.ts";
+import { CopilotService, type Copilot } from "../services/CopilotService.ts";
+import {
+  ApiError,
+  AuthError,
+  FsError,
+  ParseError,
+  HighlightError,
+} from "../errors/index.ts";
 
 export interface AskOptions {
   system?: string;
@@ -16,14 +22,17 @@ export class CopilotChatInstance {
   private history: ChatMessage[] = [];
 
   constructor(
-    private copilot: CopilotService,
+    private copilot: Copilot,
     private model: CopilotModel,
   ) {}
 
   ask(
     userMessage: string,
     options: AskOptions = {},
-  ): Effect.Effect<string, ApiError | AuthError | FsError | ParseError | HighlightError> {
+  ): Effect.Effect<
+    string,
+    ApiError | AuthError | FsError | ParseError | HighlightError
+  > {
     const messages: ChatMessage[] = [];
 
     if (options.system) {
@@ -35,17 +44,19 @@ export class CopilotChatInstance {
 
     const shouldStream = options.stream !== false;
 
-    const stream = chatStream(this.copilot, this.model, messages,
-      options.temperature !== undefined ? { temperature: options.temperature } : {},
+    const stream = chatStream(
+      this.model,
+      messages,
+      options.temperature !== undefined
+        ? { temperature: options.temperature }
+        : {},
     );
 
     const withSideEffects = shouldStream
-      ? Stream.tap(
-          stream,
-          (chunk) =>
-            options.onChunk
-              ? options.onChunk(chunk)
-              : Effect.sync(() => process.stdout.write(chunk)),
+      ? Stream.tap(stream, (chunk) =>
+          options.onChunk
+            ? options.onChunk(chunk)
+            : Effect.sync(() => process.stdout.write(chunk)),
         )
       : stream;
 
@@ -62,7 +73,9 @@ export class CopilotChatInstance {
       this.history.push({ role: "user", content: userMessage });
       this.history.push({ role: "assistant", content: fullResponse });
       return fullResponse;
-    });
+    }).pipe(
+      Effect.provideService(CopilotService, CopilotService.of(this.copilot)),
+    );
   }
 
   getHistory(): ChatMessage[] {

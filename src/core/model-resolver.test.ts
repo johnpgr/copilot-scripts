@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as Effect from "effect/Effect";
-import type { CopilotService } from "../services/CopilotService.ts";
-import type { FileSystem } from "../services/FileSystemService.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { FileSystemService } from "../services/FileSystemService.ts";
 import { ModelResolver } from "./model-resolver.ts";
 import type { CopilotModel } from "../api/models.ts";
 
@@ -29,36 +29,38 @@ describe("ModelResolver", () => {
     },
   ];
 
-  const noopFs: FileSystem = {
+  const noopFs = FileSystemService.of({
     readFile: () => Effect.succeed(""),
     writeFile: () => Effect.succeed(undefined),
     appendFile: () => Effect.succeed(undefined),
     ensureDir: () => Effect.succeed(undefined),
     exists: () => Effect.succeed(false),
     join: (...segments: string[]) => segments.join("/"),
-  };
+  });
 
-  const stubCopilot: CopilotService = {
+  const stubCopilot = CopilotService.of({
     request: () => Effect.succeed({} as never),
     stream: () => {
       throw new Error("Not used");
     },
-  };
+  });
 
   test("caches the model list between requests", async () => {
     let invocationCount = 0;
-    const fetcher = () =>
-      Effect.sync(() => {
-        invocationCount += 1;
-        return sampleModels;
-      });
+    const fetcher = Effect.sync(() => {
+      invocationCount += 1;
+      return sampleModels;
+    });
 
     const resolver = await Effect.runPromise(
-      ModelResolver.make(stubCopilot, noopFs, {
+      ModelResolver.make({
         fetcher,
         skipPrompt: true,
         shortcuts: {},
-      }),
+      }).pipe(
+        Effect.provideService(CopilotService, stubCopilot),
+        Effect.provideService(FileSystemService, noopFs),
+      ),
     );
 
     await Effect.runPromise(resolver.listModels());
@@ -69,7 +71,9 @@ describe("ModelResolver", () => {
 
   test("filters models by id, name, and subsequence matches", () => {
     expect(
-      ModelResolver.filterModels(sampleModels, "claude").map((model) => model.id),
+      ModelResolver.filterModels(sampleModels, "claude").map(
+        (model) => model.id,
+      ),
     ).toEqual(["claude-3.5"]);
 
     expect(

@@ -1,4 +1,5 @@
 import * as Stream from "effect/Stream";
+import * as Effect from "effect/Effect";
 import type { CopilotModel } from "./models.ts";
 import { CopilotService } from "../services/CopilotService.ts";
 import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
@@ -9,65 +10,90 @@ export interface ChatMessage {
 }
 
 export const chatStream = (
-  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
   options: { temperature?: number } = {},
-): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> => {
+): Stream.Stream<
+  string,
+  ApiError | AuthError | FsError | ParseError,
+  CopilotService
+> => {
   if (model.use_responses) {
-    return Stream.catchAll(streamResponsesAPI(copilot, model, messages), () =>
-      streamChatCompletions(copilot, model, messages, options),
+    return Stream.catchAll(streamResponsesAPI(model, messages), () =>
+      streamChatCompletions(model, messages, options),
     );
   }
-  return streamChatCompletions(copilot, model, messages, options);
+  return streamChatCompletions(model, messages, options);
 };
 
 function streamResponsesAPI(
-  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
-): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> {
-  const systemMsg = messages.find((m) => m.role === "system");
-  const inputMessages = messages.filter((m) => m.role !== "system");
+): Stream.Stream<
+  string,
+  ApiError | AuthError | FsError | ParseError,
+  CopilotService
+> {
+  return Stream.unwrap(
+    Effect.gen(function* (_) {
+      const copilot = yield* _(CopilotService);
+      const systemMsg = messages.find((m) => m.role === "system");
+      const inputMessages = messages.filter((m) => m.role !== "system");
 
-  const body = {
-    model: model.id,
-    stream: true,
-    input: inputMessages.map((m) => ({ role: m.role, content: m.content })),
-    ...(systemMsg && { instructions: systemMsg.content }),
-  };
+      const body = {
+        model: model.id,
+        stream: true,
+        input: inputMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...(systemMsg && { instructions: systemMsg.content }),
+      };
 
-  return Stream.flatMap(copilot.stream("/responses", body), (chunk) => {
-    if (
-      chunk.type === "response.content.delta" ||
-      chunk.type === "response.output_text.delta"
-    ) {
-      const text = extractTextFromDelta(chunk.delta);
-      return text ? Stream.succeed(text) : Stream.empty;
-    }
-    return Stream.empty;
-  });
+      return Stream.flatMap(
+        copilot.stream("/responses", body),
+        (chunk: any) => {
+          if (
+            chunk.type === "response.content.delta" ||
+            chunk.type === "response.output_text.delta"
+          ) {
+            const text = extractTextFromDelta(chunk.delta);
+            return text ? Stream.succeed(text) : Stream.empty;
+          }
+          return Stream.empty;
+        },
+      );
+    }),
+  );
 }
 
 function streamChatCompletions(
-  copilot: CopilotService,
   model: CopilotModel,
   messages: ChatMessage[],
   options: { temperature?: number },
-): Stream.Stream<string, ApiError | AuthError | FsError | ParseError> {
-  const body = {
-    model: model.id,
-    stream: true,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    ...(options.temperature !== undefined && {
-      temperature: options.temperature,
-    }),
-  };
+): Stream.Stream<
+  string,
+  ApiError | AuthError | FsError | ParseError,
+  CopilotService
+> {
+  return Stream.unwrap(
+    Effect.gen(function* (_) {
+      const copilot = yield* _(CopilotService);
+      const body = {
+        model: model.id,
+        stream: true,
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        ...(options.temperature !== undefined && {
+          temperature: options.temperature,
+        }),
+      };
 
-  return Stream.flatMap(copilot.stream("/chat/completions", body), (chunk) => {
-    const content = chunk.choices?.[0]?.delta?.content;
-    return content ? Stream.succeed(content) : Stream.empty;
-  });
+      return Stream.flatMap(
+        copilot.stream("/chat/completions", body),
+        (chunk: any) => {
+          const content = chunk.choices?.[0]?.delta?.content;
+          return content ? Stream.succeed(content) : Stream.empty;
+        },
+      );
+    }),
+  );
 }
 
 function extractTextFromDelta(delta: any): string {

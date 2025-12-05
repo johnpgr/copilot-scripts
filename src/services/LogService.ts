@@ -1,39 +1,43 @@
+import { Context, Effect, Layer } from "effect";
 import path from "path";
-import * as Effect from "effect/Effect";
-import { FileSystem } from "./FileSystemService.ts";
+import { FileSystemService } from "./FileSystemService.ts";
 import { FsError } from "../errors/index.ts";
 
-export interface LogService {
-  createLogFile: (
+export interface Logger {
+  readonly createLogFile: (
     tool: string,
     prefix?: string,
   ) => Effect.Effect<string, FsError>;
-  append: (filePath: string, content: string) => Effect.Effect<void, FsError>;
+  readonly append: (
+    filePath: string,
+    content: string,
+  ) => Effect.Effect<void, FsError>;
 }
 
-export namespace LogService {
-  export function create(fs: FileSystem): LogService {
-    const home = process.env.HOME || "";
+export class LogService extends Context.Tag("@app/LogService")<
+  LogService,
+  Logger
+>() {
+  static readonly layer = Layer.effect(
+    LogService,
+    Effect.gen(function* () {
+      const fs = yield* FileSystemService;
+      const home = process.env.HOME || "";
 
-    const createLogFile: LogService["createLogFile"] = (
-      tool,
-      prefix = "conversation",
-    ) => {
-      const dir = fs.join(home, `.copilot-scripts/${tool}`);
-      return Effect.flatMap(fs.ensureDir(dir), () => {
-        const filePath = path.join(dir, `${prefix}_${Date.now()}.txt`);
-        return Effect.flatMap(fs.writeFile(filePath, ""), () =>
-          Effect.succeed(filePath),
+      const createLogFile = (tool: string, prefix = "conversation") => {
+        const dir = fs.join(home, `.copilot-scripts/${tool}`);
+        return fs.ensureDir(dir).pipe(
+          Effect.flatMap(() => {
+            const filePath = path.join(dir, `${prefix}_${Date.now()}.txt`);
+            return fs.writeFile(filePath, "").pipe(Effect.as(filePath));
+          }),
         );
-      });
-    };
+      };
 
-    const append: LogService["append"] = (filePath, content) =>
-      fs.appendFile(filePath, content);
+      const append = (filePath: string, content: string) =>
+        fs.appendFile(filePath, content);
 
-    return {
-      createLogFile,
-      append,
-    };
-  }
+      return LogService.of({ createLogFile, append });
+    }),
+  );
 }

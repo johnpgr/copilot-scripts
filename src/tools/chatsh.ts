@@ -6,9 +6,9 @@ import { promisify } from "node:util";
 import * as Effect from "effect/Effect";
 import { ModelResolver } from "../core/model-resolver.ts";
 import { CopilotChatInstance } from "../core/chat-instance.ts";
-import { LogService } from "../services/LogService.ts";
-import { CopilotService } from "../services/CopilotService.ts";
-import { RuntimeServices } from "../runtime.ts";
+import { LogService, type Logger } from "../services/LogService.ts";
+import { CopilotService, type Copilot } from "../services/CopilotService.ts";
+import { AppLayer } from "../runtime.ts";
 import type { CopilotModel } from "../api/models.ts";
 import { StreamBuffer } from "../utils/stream-buffer.ts";
 import { SyntaxHighlighter } from "../utils/syntax-highlighter.ts";
@@ -28,14 +28,20 @@ I will show you the outputs of every command you run.
 IMPORTANT: Be CONCISE and DIRECT. Avoid unnecessary explanations.`;
 
 interface ChatEnv {
-  copilot: CopilotService;
-  logService: LogService;
+  copilot: Copilot;
+  logService: Logger;
   model: CopilotModel;
   logFile: string;
   resolver: ModelResolver;
 }
 
-async function runChat({ copilot, logService, model, logFile, resolver }: ChatEnv) {
+async function runChat({
+  copilot,
+  logService,
+  model,
+  logFile,
+  resolver,
+}: ChatEnv) {
   console.log(`${model.name} (${model.id})\n`);
 
   const chat = new CopilotChatInstance(copilot, model);
@@ -69,7 +75,6 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
   let pendingModelFetch: Promise<void> | null = null;
   let modelFetchError: string | null = null;
 
-  let previousDropdownHeight = 0;
   let isSubmitting = false;
 
   const PROMPT_STYLED = "\x1b[1mλ \x1b[0m";
@@ -158,7 +163,8 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
     }
 
     const matches = COMMANDS.filter((command) =>
-      normalized === "" || command.label.toLowerCase().includes(`/${normalized}`),
+      normalized === "" ||
+      command.label.toLowerCase().includes(`/${normalized}`),
     );
     dropdownState.mode = matches.length > 0 ? "command" : null;
     dropdownState.commands = matches;
@@ -200,32 +206,21 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
   };
 
   const render = () => {
-    // 1. Go to start of prompt line and clear it
     process.stdout.write("\x1b[0G\x1b[2K");
-
-    // 2. Render the prompt and input buffer
     process.stdout.write(PROMPT_STYLED + inputBuffer);
-
-    // 3. Move to next line to clear "everything below" and render dropdown
     process.stdout.write("\n");
-    process.stdout.write("\x1b[0J"); // Clear everything below the cursor
+    process.stdout.write("\x1b[0J");
 
-    // 4. Render new dropdown if any
     const dropdownLines = getDropdownLines();
     if (dropdownLines.length > 0) {
       for (const line of dropdownLines) {
         process.stdout.write(line + "\n");
       }
-      // Move cursor back up to the prompt line
-      // We moved down 1 initially (\n), then printed N lines (N * \n)
-      // Total lines to move up = 1 + dropdownLines.length
       process.stdout.write(`\x1b[${1 + dropdownLines.length}A`);
     } else {
-      // If no dropdown, we just moved down 1. Move back up 1.
       process.stdout.write(`\x1b[1A`);
     }
 
-    // 5. Restore cursor horizontal position on the prompt line
     process.stdout.write("\x1b[0G");
     const cursorColumn = PROMPT_PLAIN.length + cursor;
     if (cursorColumn > 0) {
@@ -248,9 +243,7 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
   };
 
   const prepareForOutput = () => {
-    // Clear everything below the current line to remove any dropdown artifacts
     process.stdout.write("\n\x1b[0J\x1b[1A");
-    // Clear the current line
     process.stdout.write("\x1b[0G\x1b[2K");
   };
 
@@ -301,7 +294,7 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
           const { stdout, stderr } = await execAsync(cmd);
           const output = stdout + stderr;
           process.stdout.write("\x1b[2m" + output + "\x1b[0m\n");
-          userCommandOutputs.push(`\\sh\n${output}\n\\\``);
+          userCommandOutputs.push(`\sh\n${output}\n\``);
           await log(`\n$ ${cmd}\n${output}\n`);
         } catch (e: any) {
           const message = e?.message || String(e);
@@ -313,7 +306,7 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
       }
 
       const contextParts = [
-        ...aiCommandOutputs.map((output) => `\\sh\n${output}\n\\\``),
+        ...aiCommandOutputs.map((output) => `\sh\n${output}\n\``),
         ...userCommandOutputs,
         line,
       ];
@@ -539,26 +532,28 @@ async function runChat({ copilot, logService, model, logFile, resolver }: ChatEn
   render();
 }
 
-async function runProgram() {
+const main = Effect.gen(function* (_) {
   const modelSpec = process.argv[2] || "g";
-  const services = RuntimeServices.create();
-  const resolver = await Effect.runPromise(
-    ModelResolver.make(services.copilot, services.fs),
-  );
-  const model = await Effect.runPromise(resolver.resolve(modelSpec));
-  const logFile = await Effect.runPromise(services.log.createLogFile("chatsh"));
-  return {
-    copilot: services.copilot,
-    logService: services.log,
-    model,
-    logFile,
-    resolver,
-  };
-}
+  const copilot = yield* _(CopilotService);
+  const logService = yield* _(LogService);
+  const resolver = yield* _(ModelResolver.make());
+  const model = yield* _(resolver.resolve(modelSpec));
+  const logFile = yield* _(logService.createLogFile("chatsh"));
 
-runProgram()
-  .then((env) => runChat(env))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  yield* _(
+    Effect.promise(() =>
+      runChat({
+        copilot,
+        logService,
+        model,
+        logFile,
+        resolver,
+      }),
+    ),
+  );
+});
+
+Effect.runPromise(main.pipe(Effect.provide(AppLayer))).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

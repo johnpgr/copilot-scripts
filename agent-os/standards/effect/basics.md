@@ -90,3 +90,27 @@ Only run Effects (via `Effect.runPromise`, `Effect.runSync`) at application entr
 const main = program.pipe(Effect.provide(appLayer))
 Effect.runPromise(main)
 ```
+
+### Deprecated Patterns
+
+#### ❌ Effect.gen Adapter Function
+
+The adapter parameter `_` in `Effect.gen` is **deprecated**. Never generate code using the adapter pattern:
+
+```typescript
+// ❌ DEPRECATED - Do NOT use the adapter parameter
+Effect.gen(function* (_) {
+  const data = yield* _(fetchData)
+  const result = yield* _(processData(data))
+  return result
+})
+
+// ✅ CORRECT - Use yield* directly without adapter
+Effect.gen(function* () {
+  const data = yield* fetchData
+  const result = yield* processData(data)
+  return result
+})
+```
+
+The `_` adapter was previously required but is now just an alias of `pipe` and triggers deprecation warnings. Always use the modern pattern with direct `yield*` expressions.
