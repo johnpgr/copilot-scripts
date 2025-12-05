@@ -70,9 +70,7 @@ Rules:
 - To delete a file, emit <delete file="path" />.
 - Do not rewrite unchanged blocks.
 - Do not wrap the output in markdown code blocks (e.g. 
----
-xml
----
+\`\`\`xml
 ).
 - After all commands, append a <summary> ... </summary> block explaining the changes.
 - Return only the commands and the summary; no conversational filler.`;

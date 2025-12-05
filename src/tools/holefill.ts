@@ -26,7 +26,7 @@ User sends: function test() {\n  {:FILL_HERE:}\n}
 You respond: <COMPLETION>return 42;</COMPLETION>`;
 
 function leftAlignHoles(code: string): string {
-  return code.replace(/^([ \t]+)(\.\?\.)*$/gm, "$2");
+  return code.replace(/^([ \t]+)(\.\?\.)$/gm, "$2");
 }
 
 function expandInlineImports(code: string, baseDir: string, fs: FileSystem) {
