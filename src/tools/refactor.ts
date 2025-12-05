@@ -122,7 +122,7 @@ interface DeleteCommand {
 
 type EditCommand = PatchCommand | WriteCommand | DeleteCommand;
 
-const main = Effect.gen(function* (_) {
+const main = Effect.gen(function* () {
   const filePath = process.argv[2];
   const modelSpec = process.argv[3] || "g";
 
@@ -131,22 +131,22 @@ const main = Effect.gen(function* (_) {
     return process.exit(1);
   }
 
-  const fs = yield* _(FileSystemService);
-  const copilot = yield* _(CopilotService);
+  const fs = yield* FileSystemService;
+  const copilot = yield* CopilotService;
 
   const root = process.cwd();
   const absEntryPath = path.resolve(root, filePath);
 
   // 1. Read entry file and extract prompt
-  const entryContent = yield* _(fs.readFile(absEntryPath));
+  const entryContent = yield* fs.readFile(absEntryPath);
   const { body: fileBody, prompt: taskPrompt } =
     extractPromptSections(entryContent);
 
   // 2. Collect context (recursive imports)
-  const files = yield* _(collectContext(fs, absEntryPath, fileBody, root));
+  const files = yield* collectContext(fs, absEntryPath, fileBody, root);
 
   // 2b. Find referrers (reverse dependencies) using ripgrep
-  const referrers = yield* _(findReferrers(fs, absEntryPath, root));
+  const referrers = yield* findReferrers(fs, absEntryPath, root);
 
   for (const [relPath, content] of referrers) {
     if (!files.has(relPath)) {
@@ -165,9 +165,9 @@ const main = Effect.gen(function* (_) {
 
   // 4. Resolve model
   console.log("Resolving model...");
-  const resolver = yield* _(ModelResolver.make());
+  const resolver = yield* ModelResolver.make();
   console.log("Resolver created.");
-  const model = yield* _(resolver.resolve(modelSpec));
+  const model = yield* resolver.resolve(modelSpec);
   console.log(`Model resolved: ${model.id}`);
 
   // 5. Compacting Phase (if needed)
@@ -178,7 +178,7 @@ const main = Effect.gen(function* (_) {
     console.log("\n[Compacting phase...]");
 
     // Try to find a faster/cheaper model for compaction
-    const allModels = yield* _(fetchModels);
+    const allModels = yield* fetchModels;
     const compactorCandidates = ["mini", "turbo", "haiku", "flash"];
     const fastModel =
       allModels.find((m) =>
@@ -193,7 +193,7 @@ const main = Effect.gen(function* (_) {
       fullContext,
     ).replace("{TASK}", taskPrompt);
 
-    const response = yield* _(chat.ask(compactingPrompt, { stream: true }));
+    const response = yield* chat.ask(compactingPrompt, { stream: true });
 
     const omittedIds = parseOmitCommands(response);
     console.log(`\nOmitted ${omittedIds.size} irrelevant blocks`);
@@ -211,11 +211,11 @@ const main = Effect.gen(function* (_) {
   ).replace("{TASK}", taskPrompt);
 
   const chat = new CopilotChatInstance(copilot, model);
-  const response = yield* _(chat.ask(editingPrompt, { stream: true }));
+  const response = yield* chat.ask(editingPrompt, { stream: true });
 
   // 7. Apply changes
   const commands = parseCommands(response);
-  const messages = yield* _(applyCommands(commands, blockState, fs));
+  const messages = yield* applyCommands(commands, blockState, fs);
 
   console.log("\n✓ Refactor complete");
   if (messages.length > 0) {
@@ -232,15 +232,14 @@ function findReferrers(
   targetAbsPath: string,
   root: string,
 ) {
-  return Effect.gen(function* (_) {
+  return Effect.gen(function* () {
     const referrers = new Map<string, string>();
     const filename = path.basename(targetAbsPath);
     const nameNoExt = filename.replace(/\.[^/.]+$/, "");
 
     const regex = `(from|import|require).*['"].*${nameNoExt}['"]`;
 
-    yield* _(
-      Effect.tryPromise({
+    yield* Effect.tryPromise({
         try: () => execFileAsync("rg", ["--version"]),
         catch: () => new Error("rg not found"),
       }).pipe(
@@ -263,7 +262,7 @@ function findReferrers(
         }),
         Effect.flatMap((lines) =>
           Effect.forEach(lines, (relPath) =>
-            Effect.gen(function* (_) {
+            Effect.gen(function* () {
               const absPath = path.resolve(root, relPath);
               if (absPath === targetAbsPath) return;
 
@@ -272,14 +271,13 @@ function findReferrers(
               )
                 return;
 
-              const content = yield* _(fs.readFile(absPath));
+              const content = yield* fs.readFile(absPath);
               referrers.set(relPath, content);
             }),
           ),
         ),
         Effect.catchAll(() => Effect.void),
-      ),
-    );
+      );
 
     return referrers;
   });
@@ -315,7 +313,7 @@ function collectContext(
   entryContent: string,
   root: string,
 ) {
-  return Effect.gen(function* (_) {
+  return Effect.gen(function* () {
     const context = new Map<string, string>();
     const visited = new Set<string>();
 
@@ -323,18 +321,18 @@ function collectContext(
       currentPath: string,
       content: string | null,
     ): Effect.Effect<void, FsError> =>
-      Effect.gen(function* (_) {
+      Effect.gen(function* () {
         let finalPath = path.resolve(currentPath);
         let text = content;
         let exists = true;
 
         if (text === null) {
-          exists = yield* _(fs.exists(finalPath));
+          exists = yield* fs.exists(finalPath);
           if (!exists) {
             const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
             for (const ext of extensions) {
               const p = finalPath + ext;
-              if (yield* _(fs.exists(p))) {
+              if (yield* fs.exists(p)) {
                 finalPath = p;
                 exists = true;
                 break;
@@ -354,7 +352,7 @@ function collectContext(
         }
 
         if (text === null) {
-          text = yield* _(fs.readFile(finalPath));
+          text = yield* fs.readFile(finalPath);
         }
 
         const relPath = path.relative(root, finalPath);
@@ -363,11 +361,11 @@ function collectContext(
         const imports = findImports(text!);
         for (const importPath of imports) {
           const nextPath = path.resolve(path.dirname(finalPath), importPath);
-          yield* _(visit(nextPath, null));
+          yield* visit(nextPath, null);
         }
       });
 
-    yield* _(visit(entryFile, entryContent));
+    yield* visit(entryFile, entryContent);
     return context;
   });
 }
@@ -507,7 +505,7 @@ function applyCommands(
   state: BlockState,
   fs: FileSystem,
 ) {
-  return Effect.gen(function* (_) {
+  return Effect.gen(function* () {
     const messages: string[] = [];
     const filePatches = new Map<string, Map<number, string>>();
 
@@ -520,10 +518,10 @@ function applyCommands(
         }
         filePatches.get(block.file)!.set(block.id, cmd.content);
       } else if (cmd.type === "write") {
-        yield* _(fs.writeFile(cmd.file, cmd.content));
+        yield* fs.writeFile(cmd.file, cmd.content);
         messages.push(`wrote ${cmd.file}`);
       } else if (cmd.type === "delete") {
-        yield* _(fs.writeFile(cmd.file, ""));
+        yield* fs.writeFile(cmd.file, "");
         messages.push(`deleted ${cmd.file}`);
       }
     }
@@ -536,7 +534,7 @@ function applyCommands(
         .map((b) => patches.get(b.id) ?? b.content)
         .join("\n\n");
 
-      yield* _(fs.writeFile(file, updated));
+      yield* fs.writeFile(file, updated);
       messages.push(`patched ${file}`);
     }
 

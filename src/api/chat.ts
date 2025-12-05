@@ -35,8 +35,8 @@ function streamResponsesAPI(
   CopilotService
 > {
   return Stream.unwrap(
-    Effect.gen(function* (_) {
-      const copilot = yield* _(CopilotService);
+    Effect.gen(function* () {
+      const copilot = yield* CopilotService;
       const systemMsg = messages.find((m) => m.role === "system");
       const inputMessages = messages.filter((m) => m.role !== "system");
 
@@ -74,8 +74,8 @@ function streamChatCompletions(
   CopilotService
 > {
   return Stream.unwrap(
-    Effect.gen(function* (_) {
-      const copilot = yield* _(CopilotService);
+    Effect.gen(function* () {
+      const copilot = yield* CopilotService;
       const body = {
         model: model.id,
         stream: true,

@@ -108,7 +108,7 @@ async function runChat({
       startSpinner();
       return undefined;
     }),
-    () => Effect.sync(stopSpinner),
+    () => Effect.sync(stopSpinner)
   );
 
   const ensureModelCache = () => {
@@ -162,9 +162,10 @@ async function runChat({
       return;
     }
 
-    const matches = COMMANDS.filter((command) =>
-      normalized === "" ||
-      command.label.toLowerCase().includes(`/${normalized}`),
+    const matches = COMMANDS.filter(
+      (command) =>
+        normalized === "" ||
+        command.label.toLowerCase().includes(`/${normalized}`)
     );
     dropdownState.mode = matches.length > 0 ? "command" : null;
     dropdownState.commands = matches;
@@ -260,9 +261,10 @@ async function runChat({
 
   const handleModelSelection = async () => {
     if (dropdownState.mode !== "model" || !dropdownState.models.length) return;
-    const selected = dropdownState.models[
-      Math.min(modelIndex, dropdownState.models.length - 1)
-    ];
+    const selected =
+      dropdownState.models[
+        Math.min(modelIndex, dropdownState.models.length - 1)
+      ];
     if (!selected) return;
     isSubmitting = true;
     try {
@@ -323,7 +325,7 @@ async function runChat({
             yield* spinner;
             const streamBuffer = yield* StreamBuffer.create(
               (text) => process.stdout.write(text),
-              highlighter,
+              highlighter
             );
             const result = yield* chat.ask(fullMessage, {
               system: SYSTEM_PROMPT,
@@ -336,8 +338,8 @@ async function runChat({
             });
             yield* streamBuffer.flush();
             return result;
-          }),
-        ),
+          })
+        )
       );
 
       process.stdout.write("\n");
@@ -532,24 +534,22 @@ async function runChat({
   render();
 }
 
-const main = Effect.gen(function* (_) {
+const main = Effect.gen(function* () {
   const modelSpec = process.argv[2] || "g";
-  const copilot = yield* _(CopilotService);
-  const logService = yield* _(LogService);
-  const resolver = yield* _(ModelResolver.make());
-  const model = yield* _(resolver.resolve(modelSpec));
-  const logFile = yield* _(logService.createLogFile("chatsh"));
+  const copilot = yield* CopilotService;
+  const logService = yield* LogService;
+  const resolver = yield* ModelResolver.make();
+  const model = yield* resolver.resolve(modelSpec);
+  const logFile = yield* logService.createLogFile("chatsh");
 
-  yield* _(
-    Effect.promise(() =>
-      runChat({
-        copilot,
-        logService,
-        model,
-        logFile,
-        resolver,
-      }),
-    ),
+  yield* Effect.promise(() =>
+    runChat({
+      copilot,
+      logService,
+      model,
+      logFile,
+      resolver,
+    })
   );
 });
 

@@ -48,7 +48,7 @@ See `effect/iteration.md` for detailed patterns and examples.
 ### Effect TS & Functional Programming
 
 - **Typed Error Channels**: Always use the error channel of `Effect<Success, Error>` to model expected failures. Avoid throwing exceptions in domain logic.
-- **Generator Syntax**: Prefer `Effect.gen(function* (_) { ... })` for readable, sequential effect composition over deeply nested `flatMap` chains.
+- **Generator Syntax**: Prefer `Effect.gen(function* () { ... })` for readable, sequential effect composition over deeply nested `flatMap` chains.
 - **Explicit Resource Management**: Use `Effect.acquireRelease` or `Effect.scope` to ensure resources (files, connections) are properly acquired and released, even in the presence of failures.
 - **Edge-of-World Execution**: Only run Effects (via `Effect.runPromise`, `Effect.runSync`) at the entry point of the application (CLI handlers, API route handlers). Keep the core application logic pure and composed of Effects.
 - **Dependency Injection**: Use arguments or `Effect.Context` to inject dependencies (like `FileSystem`, `CopilotService`) rather than hardcoding global instances. This improves testability and modularity.

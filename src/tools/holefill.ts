@@ -29,12 +29,8 @@ function leftAlignHoles(code: string): string {
   return code.replace(/^([ \t]+)(\.\?\.)*$/gm, "$2");
 }
 
-function expandInlineImports(
-  code: string,
-  baseDir: string,
-  fs: FileSystem,
-) {
-  return Effect.gen(function* (_) {
+function expandInlineImports(code: string, baseDir: string, fs: FileSystem) {
+  return Effect.gen(function* () {
     const lines = code.split("\n");
     const result: string[] = [];
 
@@ -46,7 +42,7 @@ function expandInlineImports(
       const match = m1 || m2 || m3;
       if (match) {
         const importPath = path.join(baseDir, match[1]);
-        const importedCode = yield* _(fs.readFile(importPath));
+        const importedCode = yield* fs.readFile(importPath);
         result.push(importedCode);
       } else {
         result.push(line);
@@ -56,7 +52,7 @@ function expandInlineImports(
   });
 }
 
-const main = Effect.gen(function* (_) {
+const main = Effect.gen(function* () {
   const filePath = process.argv[2];
   const miniPath = process.argv[3] || "";
   const modelSpec = process.argv[4] || "g";
@@ -66,31 +62,30 @@ const main = Effect.gen(function* (_) {
     return process.exit(1);
   }
 
-  const fs = yield* _(FileSystemService);
-  const copilot = yield* _(CopilotService);
-  const resolver = yield* _(ModelResolver.make());
-  const model = yield* _(resolver.resolve(modelSpec));
+  const fs = yield* FileSystemService;
+  const copilot = yield* CopilotService;
+  const resolver = yield* ModelResolver.make();
+  const model = yield* resolver.resolve(modelSpec);
 
-  let fileCode = yield* _(fs.readFile(filePath));
-  let miniCode = miniPath ? yield* _(fs.readFile(miniPath)) : fileCode;
+  let fileCode = yield* fs.readFile(filePath);
+  let miniCode = miniPath ? yield* fs.readFile(miniPath) : fileCode;
 
   if (!miniCode.includes(".?.")) {
     console.error("No .?. placeholder found");
     return process.exit(1);
   }
 
-  miniCode = yield* _(
-    expandInlineImports(miniCode, path.dirname(filePath), fs),
-  );
+  miniCode = yield* expandInlineImports(miniCode, path.dirname(filePath), fs);
   miniCode = leftAlignHoles(miniCode);
   fileCode = leftAlignHoles(fileCode);
 
   const prompt = miniCode.replace(".?.", "{:FILL_HERE:}");
 
   const chat = new CopilotChatInstance(copilot, model);
-  const response = yield* _(
-    chat.ask(prompt, { system: SYSTEM_PROMPT, stream: false }),
-  );
+  const response = yield* chat.ask(prompt, {
+    system: SYSTEM_PROMPT,
+    stream: false,
+  });
 
   const match = response.match(/<COMPLETION>([\s\S]*?)<\/COMPLETION>/);
   let fill = match ? match[1] : response;
@@ -99,7 +94,7 @@ const main = Effect.gen(function* (_) {
   fill = fill.replace(/^\n+|\n+$/g, "");
   fileCode = fileCode.replace(".?.", fill);
 
-  yield* _(fs.writeFile(filePath, fileCode));
+  yield* fs.writeFile(filePath, fileCode);
   console.log(`✓ Filled hole in ${filePath}`);
 });
 

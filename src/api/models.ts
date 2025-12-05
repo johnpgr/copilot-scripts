@@ -15,14 +15,12 @@ export interface CopilotModel {
   use_responses: boolean;
 }
 
-export const fetchModels = Effect.gen(function* (_) {
-  const copilot = yield* _(CopilotService);
-  const raw = yield* _(copilot.request<unknown>("GET", "/models"));
+export const fetchModels = Effect.gen(function* () {
+  const copilot = yield* CopilotService;
+  const raw = yield* copilot.request<unknown>("GET", "/models");
 
-  const response = yield* _(
-    Schema.decodeUnknown(ModelsResponse)(raw).pipe(
-      Effect.mapError((e) => new ParseError(String(e))),
-    ),
+  const response = yield* Schema.decodeUnknown(ModelsResponse)(raw).pipe(
+    Effect.mapError((e) => new ParseError(String(e)))
   );
 
   return response.data

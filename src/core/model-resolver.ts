@@ -53,18 +53,18 @@ export class ModelResolver {
     ApiError | AuthError | FsError | ParseError,
     CopilotService | FileSystemService
   > {
-    return Effect.gen(function* (_) {
-      const copilot = yield* _(CopilotService);
-      const fs = yield* _(FileSystemService);
+    return Effect.gen(function* () {
+      const copilot = yield* CopilotService;
+      const fs = yield* FileSystemService;
       const fetcher = options.fetcher ?? fetchModels;
 
       // Provide the CopilotService tag to the fetcher here, 
       // so we can execute it now to get the initial models list.
-      const models = yield* _(fetcher);
+      const models = yield* fetcher;
 
       const shortcuts = options.skipPrompt
         ? options.shortcuts ?? {}
-        : yield* _(loadOrConfigureShortcuts(fs, models));
+        : yield* loadOrConfigureShortcuts(fs, models);
 
       const resolver = new ModelResolver(copilot, fs, shortcuts, fetcher);
       resolver.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
@@ -183,26 +183,26 @@ const loadOrConfigureShortcuts = (
   fs: FileSystem,
   models: CopilotModel[],
 ): Effect.Effect<ShortcutConfig, FsError | ParseError> =>
-  Effect.gen(function* (_) {
+  Effect.gen(function* () {
     const filePath = fs.join(process.env.HOME || "", CONFIG_DIR, SHORTCUT_FILE);
-    const existing = yield* _(loadShortcuts(fs, filePath));
+    const existing = yield* loadShortcuts(fs, filePath);
     if (Option.isSome(existing)) {
       return existing.value;
     }
 
     const defaults = computeDefaultShortcuts(models);
-    const configured = yield* _(promptForShortcuts(models, defaults));
-    yield* _(saveShortcuts(fs, filePath, configured));
+    const configured = yield* promptForShortcuts(models, defaults);
+    yield* saveShortcuts(fs, filePath, configured);
     return configured;
   });
 
 const loadShortcuts = (fs: FileSystem, filePath: string) =>
-  Effect.gen(function* (_) {
-    const exists = yield* _(fs.exists(filePath));
+  Effect.gen(function* () {
+    const exists = yield* fs.exists(filePath);
     if (!exists) {
       return Option.none<ShortcutConfig>();
     }
-    const text = yield* _(fs.readFile(filePath));
+    const text = yield* fs.readFile(filePath);
     try {
       const parsed = JSON.parse(text) as ShortcutConfig;
       return Option.some(parsed);
@@ -216,11 +216,11 @@ const saveShortcuts = (
   filePath: string,
   config: ShortcutConfig,
 ) =>
-  Effect.gen(function* (_) {
+  Effect.gen(function* () {
     const dir = path.dirname(filePath);
-    yield* _(fs.ensureDir(dir));
+    yield* fs.ensureDir(dir);
     const contents = JSON.stringify(config, null, 2);
-    yield* _(fs.writeFile(filePath, contents));
+    yield* fs.writeFile(filePath, contents);
   });
 
 const computeDefaultShortcuts = (models: CopilotModel[]): ShortcutConfig =>
