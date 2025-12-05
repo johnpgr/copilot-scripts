@@ -72,4 +72,8 @@ export class CopilotChatInstance {
   clearHistory(): void {
     this.history = [];
   }
+
+  setModel(model: CopilotModel): void {
+    this.model = model;
+  }
 }

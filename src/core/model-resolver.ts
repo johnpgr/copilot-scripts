@@ -20,6 +20,10 @@ const SHORTCUT_PATTERNS: Record<ShortcutKey, RegExp> = {
 const CONFIG_DIR = ".config/copilot-scripts";
 const SHORTCUT_FILE = "model-shortcuts.json";
 
+type ModelFetcher = (
+  copilot: CopilotService,
+) => Effect.Effect<CopilotModel[], ApiError | AuthError | FsError | ParseError>;
+
 export class ModelResolver {
   private cache: { models: CopilotModel[]; expiresAt: number } | null = null;
   private shortcuts: ShortcutConfig;
@@ -28,6 +32,7 @@ export class ModelResolver {
     private copilot: CopilotService,
     _fs: FileSystem,
     shortcuts: ShortcutConfig,
+    private fetcher: ModelFetcher,
   ) {
     this.shortcuts = shortcuts;
   }
@@ -35,14 +40,42 @@ export class ModelResolver {
   static make(
     copilot: CopilotService,
     fs: FileSystem,
+    options: {
+      shortcuts?: ShortcutConfig;
+      skipPrompt?: boolean;
+      fetcher?: ModelFetcher;
+    } = {},
   ): Effect.Effect<ModelResolver, ApiError | AuthError | FsError | ParseError> {
     return Effect.gen(function* (_) {
-      const models = yield* _(fetchModels(copilot));
-      const shortcuts = yield* _(loadOrConfigureShortcuts(fs, models));
-      const resolver = new ModelResolver(copilot, fs, shortcuts);
+      const fetcher = options.fetcher ?? fetchModels;
+      const models = yield* _(fetcher(copilot));
+      const shortcuts = options.skipPrompt
+        ? options.shortcuts ?? {}
+        : yield* _(loadOrConfigureShortcuts(fs, models));
+      const resolver = new ModelResolver(copilot, fs, shortcuts, fetcher);
       resolver.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
       return resolver;
     });
+  }
+
+  static filterModels(models: CopilotModel[], query: string): CopilotModel[] {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return models;
+    return models.filter((model) =>
+      ModelResolver.matchesQuery(model, normalized),
+    );
+  }
+
+  static createForTesting(
+    copilot: CopilotService,
+    fs: FileSystem,
+    models: CopilotModel[],
+    shortcuts: ShortcutConfig = {},
+    fetcher: ModelFetcher = fetchModels,
+  ): ModelResolver {
+    const resolver = new ModelResolver(copilot, fs, shortcuts, fetcher);
+    resolver.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
+    return resolver;
   }
 
   resolve(
@@ -90,10 +123,34 @@ export class ModelResolver {
       return Effect.succeed(this.cache.models);
     }
 
-    return Effect.map(fetchModels(this.copilot), (models) => {
+    return Effect.map(this.fetcher(this.copilot), (models) => {
       this.cache = { models, expiresAt: Date.now() + 5 * 60 * 1000 };
       return models;
     });
+  }
+
+  listModels(): Effect.Effect<CopilotModel[], ApiError | AuthError | FsError | ParseError> {
+    return this.getModels();
+  }
+
+  private static matchesQuery(model: CopilotModel, query: string): boolean {
+    const haystack = `${model.id} ${model.name}`.toLowerCase();
+    if (haystack.includes(query)) {
+      return true;
+    }
+    return ModelResolver.subsequenceMatch(haystack, query);
+  }
+
+  private static subsequenceMatch(text: string, term: string): boolean {
+    let offset = 0;
+    for (const char of term) {
+      const idx = text.indexOf(char, offset);
+      if (idx === -1) {
+        return false;
+      }
+      offset = idx + 1;
+    }
+    return true;
   }
 }
 
