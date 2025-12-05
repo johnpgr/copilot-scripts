@@ -2,7 +2,7 @@ import { access, appendFile, mkdir, readFile, writeFile } from "fs/promises";
 import { constants } from "fs";
 import path from "path";
 import * as Effect from "effect/Effect";
-import { FsError } from "../errors";
+import { FsError } from "../errors/index.ts";
 
 export interface FileSystem {
   readFile: (

@@ -2,10 +2,10 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Readline from "node:readline";
 import path from "path";
-import { CopilotModel, fetchModels } from "../api/models";
-import { CopilotService } from "../services/CopilotService";
-import { FileSystem } from "../services/FileSystemService";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
+import { fetchModels, type CopilotModel } from "../api/models.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { FileSystem } from "../services/FileSystemService.ts";
+import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
 type ShortcutKey = "g" | "c" | "i" | "o";
 type ShortcutConfig = Partial<Record<ShortcutKey, string>>;
@@ -26,7 +26,7 @@ export class ModelResolver {
 
   private constructor(
     private copilot: CopilotService,
-    private fs: FileSystem,
+    _fs: FileSystem,
     shortcuts: ShortcutConfig,
   ) {
     this.shortcuts = shortcuts;
@@ -141,14 +141,15 @@ const saveShortcuts = (
     yield* _(fs.writeFile(filePath, contents));
   });
 
-const computeDefaultShortcuts = (models: CopilotModel[]): ShortcutConfig => {
-  const defaults: ShortcutConfig = {};
-  (Object.keys(SHORTCUT_PATTERNS) as ShortcutKey[]).forEach((key) => {
-    const match = models.find((m) => SHORTCUT_PATTERNS[key].test(m.id));
-    if (match) defaults[key] = match.id;
-  });
-  return defaults;
-};
+const computeDefaultShortcuts = (models: CopilotModel[]): ShortcutConfig =>
+  Object.fromEntries(
+    (Object.keys(SHORTCUT_PATTERNS) as ShortcutKey[])
+      .map((key) => {
+        const match = models.find((m) => SHORTCUT_PATTERNS[key].test(m.id));
+        return match ? ([key, match.id] as const) : null;
+      })
+      .filter((entry): entry is [ShortcutKey, string] => entry !== null),
+  ) as ShortcutConfig;
 
 const promptForShortcuts = (
   models: CopilotModel[],
@@ -159,9 +160,9 @@ const promptForShortcuts = (
       console.log(
         "\nConfigure model shortcuts (press Enter to keep the suggested default):\n",
       );
-      models.forEach((m, i) => {
+      for (const [i, m] of models.entries()) {
         console.log(`[${i}] ${m.id} - ${m.name}`);
-      });
+      }
 
       const rl = Readline.createInterface({
         input: process.stdin,
@@ -190,12 +191,15 @@ const promptForShortcuts = (
         return defaultId;
       };
 
-      const result: ShortcutConfig = {
-        g: await choose("g"),
-        c: await choose("c"),
-        i: await choose("i"),
-        o: await choose("o"),
-      };
+      const keys = ["g", "c", "i", "o"] as const;
+      const entries: [ShortcutKey, string][] = [];
+      for (const key of keys) {
+        const value = await choose(key);
+        if (value !== undefined) {
+          entries.push([key, value]);
+        }
+      }
+      const result = Object.fromEntries(entries) as ShortcutConfig;
 
       rl.close();
       resume(Effect.succeed(result));

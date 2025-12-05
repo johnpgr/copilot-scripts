@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
-import { FileSystem } from "./services/FileSystemService";
-import { LogService } from "./services/LogService";
-import { AuthService } from "./services/AuthService";
-import { CopilotService } from "./services/CopilotService";
+import { FileSystem } from "./services/FileSystemService.ts";
+import { LogService } from "./services/LogService.ts";
+import { AuthService } from "./services/AuthService.ts";
+import { CopilotService } from "./services/CopilotService.ts";
 
 export interface RuntimeServices {
   fs: FileSystem;

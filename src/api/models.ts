@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
-import { CopilotService } from "../services/CopilotService";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
+import { CopilotService } from "../services/CopilotService.ts";
+import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
 export interface CopilotModel {
   id: string;

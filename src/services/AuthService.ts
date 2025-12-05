@@ -1,9 +1,9 @@
 import path from "path";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
-import { FileSystem } from "./FileSystemService";
-import { AccessToken, BearerToken, DeviceCode, TokenCache } from "../schemas";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
+import { FileSystem } from "./FileSystemService.ts";
+import { AccessToken, BearerToken, DeviceCode, TokenCache } from "../schemas/index.ts";
+import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
 export interface AuthService {
   getBearerToken: () => Effect.Effect<

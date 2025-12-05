@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import * as Effect from "effect/Effect";
-import { StreamBuffer } from "./stream-buffer";
-import { SyntaxHighlighter } from "./syntax-highlighter";
+import { StreamBuffer } from "./stream-buffer.ts";
+import { SyntaxHighlighter } from "./syntax-highlighter.ts";
 
 describe("StreamBuffer", () => {
   const highlighter = SyntaxHighlighter.create();

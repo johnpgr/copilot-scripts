@@ -3,7 +3,7 @@ import {
   loadCachedToken,
   saveBearerToken,
   saveOAuthToken,
-} from "./token-store";
+} from "./token-store.ts";
 
 const CLIENT_ID = "Iv1.b507a08c87ecfe98";
 

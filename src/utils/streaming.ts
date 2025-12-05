@@ -1,5 +1,5 @@
 import * as Stream from "effect/Stream";
-import { ParseError } from "../errors";
+import { ParseError } from "../errors/index.ts";
 
 export async function* parseSSE(
   response: Response,

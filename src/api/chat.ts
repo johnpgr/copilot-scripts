@@ -1,7 +1,7 @@
 import * as Stream from "effect/Stream";
-import { CopilotModel } from "./models";
-import { CopilotService } from "../services/CopilotService";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
+import type { CopilotModel } from "./models.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";

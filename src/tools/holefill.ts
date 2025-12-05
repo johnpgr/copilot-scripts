@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import path from "path";
 import * as Effect from "effect/Effect";
-import { CopilotChatInstance } from "../core/chat-instance";
-import { ModelResolver } from "../core/model-resolver";
-import { CopilotService } from "../services/CopilotService";
-import { FileSystem } from "../services/FileSystemService";
-import { RuntimeServices } from "../runtime";
+import { CopilotChatInstance } from "../core/chat-instance.ts";
+import { ModelResolver } from "../core/model-resolver.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { FileSystem } from "../services/FileSystemService.ts";
+import { RuntimeServices } from "../runtime.ts";
 
 const SYSTEM_PROMPT = `You fill EXACTLY ONE placeholder inside a user-provided file.
 

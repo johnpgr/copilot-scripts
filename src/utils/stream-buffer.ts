@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Option from "effect/Option";
-import { SyntaxHighlighter } from "./syntax-highlighter";
-import { HighlightError } from "../errors";
+import { SyntaxHighlighter } from "./syntax-highlighter.ts";
+import { HighlightError } from "../errors/index.ts";
 
 type State = "NORMAL" | "CODE_FENCE_OPENING" | "CODE_BLOCK";
 

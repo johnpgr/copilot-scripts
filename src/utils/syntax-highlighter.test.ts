@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import * as Effect from "effect/Effect";
-import { highlightCode, SyntaxHighlighter } from "./syntax-highlighter";
+import { highlightCode, SyntaxHighlighter } from "./syntax-highlighter.ts";
 
 describe("syntax-highlighter", () => {
   const highlighter = SyntaxHighlighter.create();

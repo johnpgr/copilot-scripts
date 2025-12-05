@@ -4,14 +4,14 @@ import readline from "node:readline";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as Effect from "effect/Effect";
-import { ModelResolver } from "../core/model-resolver";
-import { CopilotChatInstance } from "../core/chat-instance";
-import { LogService } from "../services/LogService";
-import { CopilotService } from "../services/CopilotService";
-import { RuntimeServices } from "../runtime";
-import { CopilotModel } from "../api/models";
-import { StreamBuffer } from "../utils/stream-buffer";
-import { SyntaxHighlighter } from "../utils/syntax-highlighter";
+import { ModelResolver } from "../core/model-resolver.ts";
+import { CopilotChatInstance } from "../core/chat-instance.ts";
+import { LogService } from "../services/LogService.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { RuntimeServices } from "../runtime.ts";
+import type { CopilotModel } from "../api/models.ts";
+import { StreamBuffer } from "../utils/stream-buffer.ts";
+import { SyntaxHighlighter } from "../utils/syntax-highlighter.ts";
 
 const execAsync = promisify(exec);
 

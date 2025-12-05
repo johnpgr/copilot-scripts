@@ -1,9 +1,9 @@
 import * as Stream from "effect/Stream";
 import * as Effect from "effect/Effect";
-import { chatStream, ChatMessage } from "../api/chat";
-import { CopilotModel } from "../api/models";
-import { CopilotService } from "../services/CopilotService";
-import { ApiError, AuthError, FsError, ParseError, HighlightError } from "../errors";
+import { chatStream, type ChatMessage } from "../api/chat.ts";
+import type { CopilotModel } from "../api/models.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { ApiError, AuthError, FsError, ParseError, HighlightError } from "../errors/index.ts";
 
 export interface AskOptions {
   system?: string;
@@ -35,9 +35,9 @@ export class CopilotChatInstance {
 
     const shouldStream = options.stream !== false;
 
-    const stream = chatStream(this.copilot, this.model, messages, {
-      temperature: options.temperature,
-    });
+    const stream = chatStream(this.copilot, this.model, messages,
+      options.temperature !== undefined ? { temperature: options.temperature } : {},
+    );
 
     const withSideEffects = shouldStream
       ? Stream.tap(

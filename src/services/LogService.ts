@@ -1,7 +1,7 @@
 import path from "path";
 import * as Effect from "effect/Effect";
-import { FileSystem } from "./FileSystemService";
-import { FsError } from "../errors";
+import { FileSystem } from "./FileSystemService.ts";
+import { FsError } from "../errors/index.ts";
 
 export interface LogService {
   createLogFile: (

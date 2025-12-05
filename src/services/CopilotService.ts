@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import { AuthService } from "./AuthService";
-import { ApiError, AuthError, FsError, ParseError } from "../errors";
-import { parseSSEStream } from "../utils/streaming";
+import { AuthService } from "./AuthService.ts";
+import { ApiError, AuthError, FsError, ParseError } from "../errors/index.ts";
+import { parseSSEStream } from "../utils/streaming.ts";
 
 const COPILOT_HEADERS = {
   "Editor-Version": `Bun/${Bun.version}`,
@@ -41,7 +41,7 @@ export namespace CopilotService {
                 headers: getHeaders(token, {
                   "Content-Type": "application/json",
                 }),
-                body: body ? JSON.stringify(body) : undefined,
+                ...(body ? { body: JSON.stringify(body) } : {}),
               }),
             catch: (err) => new ApiError(String(err)),
           }),

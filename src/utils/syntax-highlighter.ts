@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { BundledLanguage } from "shiki";
 import { getSingletonHighlighter } from "shiki";
-import { HighlightError } from "../errors";
+import { HighlightError } from "../errors/index.ts";
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   js: "javascript",

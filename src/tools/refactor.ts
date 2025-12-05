@@ -3,13 +3,13 @@ import * as Effect from "effect/Effect";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { CopilotChatInstance } from "../core/chat-instance";
-import { ModelResolver } from "../core/model-resolver";
-import { fetchModels } from "../api/models";
-import { CopilotService } from "../services/CopilotService";
-import { FileSystem } from "../services/FileSystemService";
-import { RuntimeServices } from "../runtime";
-import { countTokens } from "../utils/tokenizer";
+import { CopilotChatInstance } from "../core/chat-instance.ts";
+import { ModelResolver } from "../core/model-resolver.ts";
+import { fetchModels } from "../api/models.ts";
+import { CopilotService } from "../services/CopilotService.ts";
+import { FileSystem } from "../services/FileSystemService.ts";
+import { RuntimeServices } from "../runtime.ts";
+import { countTokens } from "../utils/tokenizer.ts";
 
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
 

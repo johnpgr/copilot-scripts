@@ -1,6 +1,6 @@
-import * as S from "@effect/schema/Schema";
+import * as S from "effect/Schema";
 import * as Effect from "effect/Effect";
-import { ParseError } from "../errors";
+import { ParseError } from "../errors/index.ts";
 
 const format = (err: unknown) =>
   typeof err === "string" ? err : JSON.stringify(err);
