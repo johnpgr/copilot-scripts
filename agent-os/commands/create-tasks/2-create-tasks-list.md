@@ -1,12 +1,4 @@
----
-name: task-list-creator
-description: Use proactively to create a detailed and strategic tasks list for development of a spec
-tools: Write, Read, Bash, WebFetch
-color: orange
-model: inherit
----
-
-You are a software product tasks list writer and planner. Your role is to create a detailed tasks list with strategic groupings and orderings of tasks for the development of a spec.
+Now that you have the spec.md AND/OR requirements.md, please break those down into an actionable tasks list with strategic grouping and ordering, by following these instructions:
 
 # Task List Creation
 
@@ -209,9 +201,21 @@ Recommended implementation sequence:
 - **Reference visual assets** if visuals are available
 
 
+## Display confirmation and next step
+
+Display the following message to the user:
+
+```
+The tasks list has created at `agent-os/specs/[this-spec]/tasks.md`.
+
+Review it closely to make sure it all looks good.
+
+NEXT STEP 👉 Run `/implement-tasks` (simple, effective) or `/orchestrate-tasks` (advanced, powerful) to start building!
+```
+
 ## User Standards & Preferences Compliance
 
-IMPORTANT: Ensure that the tasks list you create IS ALIGNED and DOES NOT CONFLICT with any of user's preferred tech stack, coding conventions, or common patterns as detailed in the following files:
+IMPORTANT: Ensure that the tasks list is ALIGNED and DOES NOT CONFLICT with the user's preferences and standards as detailed in the following files:
 
 @agent-os/standards/backend/api.md
 @agent-os/standards/backend/migrations.md

@@ -1,12 +1,6 @@
----
-name: spec-shaper
-description: Use proactively to gather detailed requirements through targeted questions and visual analysis
-tools: Write, Read, Bash, WebFetch
-color: blue
-model: inherit
----
+Now that you've initialized the folder for this new spec, proceed with the research phase.
 
-You are a software product requirements research specialist. Your role is to gather comprehensive requirements through targeted questions and visual analysis.
+Follow these instructions for researching this spec's requirements:
 
 # Spec Research
 
@@ -272,22 +266,35 @@ Ready for specification creation.
 - OUTPUT questions and STOP to wait for orchestrator to relay responses
 
 
+## Display confirmation and next step
+
+Once you've completed your research and documented it, output the following message:
+
+```
+✅ I have documented this spec's research and requirements in `agent-os/specs/[this-spec]/planning`.
+
+Next step: Run the command, `1-create-spec.md`.
+```
+
+After all steps complete, inform the user:
+
+```
+Spec initialized successfully!
+
+✅ Spec folder created: `[spec-path]`
+✅ Requirements gathered
+✅ Visual assets: [Found X files / No files provided]
+
+👉 Run `/write-spec` to create the spec.md document.
+```
+
 ## User Standards & Preferences Compliance
 
-IMPORTANT: Ensure that all of your questions and final documented requirements ARE ALIGNED and DO NOT CONFLICT with any of user's preferred tech-stack, coding conventions, or common patterns as detailed in the following files:
+IMPORTANT: Ensure that your research questions and insights are ALIGNED and DOES NOT CONFLICT with the user's preferences and standards as detailed in the following files:
 
-@agent-os/standards/backend/api.md
-@agent-os/standards/backend/migrations.md
-@agent-os/standards/backend/models.md
-@agent-os/standards/backend/queries.md
-@agent-os/standards/frontend/accessibility.md
-@agent-os/standards/frontend/components.md
-@agent-os/standards/frontend/css.md
-@agent-os/standards/frontend/responsive.md
 @agent-os/standards/global/coding-style.md
 @agent-os/standards/global/commenting.md
 @agent-os/standards/global/conventions.md
 @agent-os/standards/global/error-handling.md
 @agent-os/standards/global/tech-stack.md
 @agent-os/standards/global/validation.md
-@agent-os/standards/testing/test-writing.md

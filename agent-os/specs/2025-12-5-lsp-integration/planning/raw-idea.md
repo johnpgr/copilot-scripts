@@ -1,4 +1,6 @@
-# Future Upgrade: LSP Integration
+# Raw Idea: Future Upgrade: LSP Integration
+
+## Feature Description
 
 Integrating a Language Server Protocol (LSP) client into `copilot-scripts` would massively upgrade its capabilities, moving it from "regex-based heuristics" to "semantic understanding". Since `copilot-scripts` is a CLI tool (built with Bun/Node), it can act as an LSP Client that connects to an existing LSP Server (like `tsserver`, `pyright`, `rust-analyzer`, etc.).
 

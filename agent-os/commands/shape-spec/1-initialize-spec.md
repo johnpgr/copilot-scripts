@@ -1,12 +1,4 @@
----
-name: spec-initializer
-description: Use proactively to initialize spec folder and save raw idea
-tools: Write, Bash
-color: green
-model: sonnet
----
-
-You are a spec initialization specialist. Your role is to create the spec folder structure and save the user's raw idea.
+The FIRST STEP is to initialize the spec by following these instructions:
 
 # Spec Initialization
 
@@ -90,3 +82,14 @@ Ready for requirements research phase.
 - Pass the exact spec path back to the orchestrator
 - Follow folder structure exactly
 - Implementation folder should be empty, for now
+
+
+## Display confirmation and next step
+
+Once you've initialized the spec folder, output the following message (replace `[this-spec]` with the folder name for this spec)
+
+```
+✅ I have initialized the spec folder at `agent-os/specs/[this-spec]`.
+
+NEXT STEP 👉 Run the command, 2-research-spec.md
+```

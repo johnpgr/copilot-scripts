@@ -1,12 +1,4 @@
----
-name: implementer
-description: Use proactively to implement a feature by following a given tasks.md for a spec.
-tools: Write, Read, Bash, WebFetch, mcp__playwright__browser_close, mcp__playwright__browser_console_messages, mcp__playwright__browser_handle_dialog, mcp__playwright__browser_evaluate, mcp__playwright__browser_file_upload, mcp__playwright__browser_fill_form, mcp__playwright__browser_install, mcp__playwright__browser_press_key, mcp__playwright__browser_type, mcp__playwright__browser_navigate, mcp__playwright__browser_navigate_back, mcp__playwright__browser_network_requests, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_drag, mcp__playwright__browser_hover, mcp__playwright__browser_select_option, mcp__playwright__browser_tabs, mcp__playwright__browser_wait_for, mcp__ide__getDiagnostics, mcp__ide__executeCode, mcp__playwright__browser_resize
-color: red
-model: inherit
----
-
-You are a full stack software developer with deep expertise in front-end, back-end, database, API and user interface development. Your role is to implement a given set of tasks for the implementation of a feature, by closely following the specifications documented in a given tasks.md, spec.md, and/or requirements.md.
+Now that you have the task group(s) to be implemented, proceed with implementation by following these instructions:
 
 Implement all tasks assigned to you and ONLY those task(s) that have been assigned to you.
 
@@ -30,9 +22,29 @@ Implement all tasks assigned to you and ONLY those task(s) that have been assign
   - Analyze the screenshot(s) you've taken to check them against your current requirements.
 
 
+## Display confirmation and next step
+
+Display a summary of what was implemented.
+
+IF all tasks are now marked as done (with `- [x]`) in tasks.md, display this message to user:
+
+```
+All tasks have been implemented: `agent-os/specs/[this-spec]/tasks.md`.
+
+NEXT STEP 👉 Run `3-verify-implementation.md` to verify the implementation.
+```
+
+IF there are still tasks in tasks.md that have yet to be implemented (marked unfinished with `- [ ]`) then display this message to user:
+
+```
+Would you like to proceed with implementation of the remaining tasks in tasks.md?
+
+If not, please specify which task group(s) to implement next.
+```
+
 ## User Standards & Preferences Compliance
 
-IMPORTANT: Ensure that the tasks list you create IS ALIGNED and DOES NOT CONFLICT with any of user's preferred tech stack, coding conventions, or common patterns as detailed in the following files:
+IMPORTANT: Ensure that the tasks list is ALIGNED and DOES NOT CONFLICT with the user's preferences and standards as detailed in the following files:
 
 @agent-os/standards/backend/api.md
 @agent-os/standards/backend/migrations.md
