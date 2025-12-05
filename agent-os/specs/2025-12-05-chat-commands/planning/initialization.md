@@ -1,0 +1,2 @@
+We need a chatsh in-chat command (initiated by `/` forward-slash), The first command to be implemented would be /model
+This should have an autocomplete with the list of model ids available, or when we trigger this command a list of the models ids should be displayed and the user can choose one of them with the keyboard arrow keys
