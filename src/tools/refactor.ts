@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
+import { execFile } from "child_process";
 import * as Effect from "effect/Effect";
 import path from "path";
-import { execFile } from "child_process";
 import { promisify } from "util";
+import { fetchModels } from "../api/models.ts";
 import { CopilotChatInstance } from "../core/chat-instance.ts";
 import { ModelResolver } from "../core/model-resolver.ts";
-import { fetchModels } from "../api/models.ts";
+import { type FsError } from "../errors/index.ts";
+import { runMain } from "../runtime.ts";
 import { CopilotService } from "../services/CopilotService.ts";
 import { FileSystemService, type FileSystem } from "../services/FileSystemService.ts";
-import { type FsError } from "../errors/index.ts";
-import { AppLayer } from "../runtime.ts";
 import { countTokens } from "../utils/tokenizer.ts";
 
 const COMPACTING_PROMPT_TEMPLATE = `You're a context compactor.
@@ -540,7 +540,7 @@ function applyCommands(
   });
 }
 
-Effect.runPromise(main.pipe(Effect.provide(AppLayer))).catch((err) => {
+runMain(main).catch((err) => {
   console.error(err);
   process.exit(1);
 });

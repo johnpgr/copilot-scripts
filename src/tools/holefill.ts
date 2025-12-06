@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
-import path from "path";
 import * as Effect from "effect/Effect";
+import path from "path";
 import { CopilotChatInstance } from "../core/chat-instance.ts";
 import { ModelResolver } from "../core/model-resolver.ts";
+import { runMain } from "../runtime.ts";
 import { CopilotService } from "../services/CopilotService.ts";
 import {
   FileSystemService,
   type FileSystem,
 } from "../services/FileSystemService.ts";
-import { AppLayer } from "../runtime.ts";
 
 const SYSTEM_PROMPT = `You fill EXACTLY ONE placeholder inside a user-provided file.
 
@@ -80,7 +80,6 @@ const main = Effect.gen(function* () {
   fileCode = leftAlignHoles(fileCode);
 
   const prompt = miniCode.replace(".?.", "{:FILL_HERE:}");
-
   const chat = new CopilotChatInstance(copilot, model);
   const response = yield* chat.ask(prompt, {
     system: SYSTEM_PROMPT,
@@ -98,7 +97,7 @@ const main = Effect.gen(function* () {
   console.log(`✓ Filled hole in ${filePath}`);
 });
 
-Effect.runPromise(main.pipe(Effect.provide(AppLayer))).catch((err) => {
+runMain(main).catch((err) => {
   console.error(err);
   process.exit(1);
 });

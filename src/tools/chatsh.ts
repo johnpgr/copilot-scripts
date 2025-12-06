@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
-import os from "os";
-import readline from "node:readline";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import * as Effect from "effect/Effect";
-import { ModelResolver } from "../core/model-resolver.ts";
-import { CopilotChatInstance } from "../core/chat-instance.ts";
-import { LogService, type Logger } from "../services/LogService.ts";
-import { CopilotService, type Copilot } from "../services/CopilotService.ts";
-import { AppLayer } from "../runtime.ts";
+import { exec } from "node:child_process";
+import readline from "node:readline";
+import { runMain } from "../runtime.ts";
+import { promisify } from "node:util";
+import os from "os";
 import type { CopilotModel } from "../api/models.ts";
+import { CopilotChatInstance } from "../core/chat-instance.ts";
+import { ModelResolver } from "../core/model-resolver.ts";
+import { CopilotService, type Copilot } from "../services/CopilotService.ts";
+import { LogService, type Logger } from "../services/LogService.ts";
 import { StreamBuffer } from "../utils/stream-buffer.ts";
 import { SyntaxHighlighter } from "../utils/syntax-highlighter.ts";
 
@@ -108,7 +108,7 @@ async function runChat({
       startSpinner();
       return undefined;
     }),
-    () => Effect.sync(stopSpinner)
+    () => Effect.sync(stopSpinner),
   );
 
   const ensureModelCache = () => {
@@ -165,7 +165,7 @@ async function runChat({
     const matches = COMMANDS.filter(
       (command) =>
         normalized === "" ||
-        command.label.toLowerCase().includes(`/${normalized}`)
+        command.label.toLowerCase().includes(`/${normalized}`),
     );
     dropdownState.mode = matches.length > 0 ? "command" : null;
     dropdownState.commands = matches;
@@ -325,7 +325,7 @@ async function runChat({
             yield* spinner;
             const streamBuffer = yield* StreamBuffer.create(
               (text) => process.stdout.write(text),
-              highlighter
+              highlighter,
             );
             const result = yield* chat.ask(fullMessage, {
               system: SYSTEM_PROMPT,
@@ -338,8 +338,8 @@ async function runChat({
             });
             yield* streamBuffer.flush();
             return result;
-          })
-        )
+          }),
+        ),
       );
 
       process.stdout.write("\n");
@@ -549,11 +549,11 @@ const main = Effect.gen(function* () {
       model,
       logFile,
       resolver,
-    })
+    }),
   );
 });
 
-Effect.runPromise(main.pipe(Effect.provide(AppLayer))).catch((err) => {
+runMain(main).catch((err) => {
   console.error(err);
   process.exit(1);
 });
