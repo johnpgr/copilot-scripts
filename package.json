@@ -5,6 +5,7 @@
   "type": "module",
   "bin": {
     "chatsh": "./src/tools/chatsh.ts",
+    "commitmsg": "./src/tools/commitmsg.ts",
     "holefill": "./src/tools/holefill.ts",
     "refactor": "./src/tools/refactor.ts"
   },

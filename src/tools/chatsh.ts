@@ -2,12 +2,12 @@
 import * as Effect from "effect/Effect";
 import { exec } from "node:child_process";
 import readline from "node:readline";
-import { runMain } from "../runtime.ts";
 import { promisify } from "node:util";
 import os from "os";
 import type { CopilotModel } from "../api/models.ts";
 import { CopilotChatInstance } from "../core/chat-instance.ts";
 import { ModelResolver } from "../core/model-resolver.ts";
+import { runMain } from "../runtime.ts";
 import { CopilotService, type Copilot } from "../services/CopilotService.ts";
 import { LogService, type Logger } from "../services/LogService.ts";
 import { StreamBuffer } from "../utils/stream-buffer.ts";
@@ -34,6 +34,84 @@ interface ChatEnv {
   logFile: string;
   resolver: ModelResolver;
 }
+
+interface ParsedArgs {
+  modelSpec: string;
+  prompt: string | null;
+}
+
+const USAGE = `Usage: chatsh [-X | --model-id] [prompt]
+
+Options:
+  -X            Model shortcut (single char): -g, -c, -o
+  --model-id    Full model ID: --gpt-4.1, --claude-3.5-sonnet
+
+Examples:
+  chatsh -g What is 2+2?       Single prompt with GPT
+  chatsh --claude-3.5-sonnet   Interactive mode with Claude
+  chatsh                       Interactive mode with default model
+`;
+
+const parseArgs = (argv: string[]): ParsedArgs => {
+  const args = argv.slice(2);
+
+  // Check for invalid single-hyphen flags (more than 1 char after -)
+  const invalidFlag = args.find(
+    (a) => a.startsWith("-") && !a.startsWith("--") && a.length > 2,
+  );
+  if (invalidFlag) {
+    console.error(`Error: Invalid flag "${invalidFlag}"\n`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  // Find model flag: --full-model-id or -X (single char shortcut)
+  const modelFlagIndex = args.findIndex(
+    (a) => a.startsWith("--") || (a.startsWith("-") && a.length === 2),
+  );
+
+  if (modelFlagIndex !== -1) {
+    const flag = args[modelFlagIndex];
+    const modelSpec = flag.startsWith("--") ? flag.slice(2) : flag.slice(1);
+    const remaining = [
+      ...args.slice(0, modelFlagIndex),
+      ...args.slice(modelFlagIndex + 1),
+    ];
+    return {
+      modelSpec: modelSpec || "g",
+      prompt: remaining.length > 0 ? remaining.join(" ") : null,
+    };
+  }
+
+  return { modelSpec: "g", prompt: args.length > 0 ? args.join(" ") : null };
+};
+
+interface SinglePromptEnv {
+  copilot: Copilot;
+  model: CopilotModel;
+  prompt: string;
+}
+
+const runSinglePrompt = ({ copilot, model, prompt }: SinglePromptEnv) =>
+  Effect.gen(function* () {
+    const chat = new CopilotChatInstance(copilot, model);
+    const highlighter = SyntaxHighlighter.create();
+
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const streamBuffer = yield* StreamBuffer.create(
+          (text) => process.stdout.write(text),
+          highlighter,
+        );
+        yield* chat.ask(prompt, {
+          stream: true,
+          onChunk: (chunk) => streamBuffer.write(chunk),
+        });
+        yield* streamBuffer.flush();
+      }),
+    );
+    process.stdout.write("\n");
+  });
 
 async function runChat({
   copilot,
@@ -535,22 +613,20 @@ async function runChat({
 }
 
 const main = Effect.gen(function* () {
-  const modelSpec = process.argv[2] || "g";
+  const { modelSpec, prompt } = parseArgs(process.argv);
   const copilot = yield* CopilotService;
-  const logService = yield* LogService;
   const resolver = yield* ModelResolver.make();
   const model = yield* resolver.resolve(modelSpec);
-  const logFile = yield* logService.createLogFile("chatsh");
 
-  yield* Effect.promise(() =>
-    runChat({
-      copilot,
-      logService,
-      model,
-      logFile,
-      resolver,
-    }),
-  );
+  if (prompt) {
+    yield* runSinglePrompt({ copilot, model, prompt });
+  } else {
+    const logService = yield* LogService;
+    const logFile = yield* logService.createLogFile("chatsh");
+    yield* Effect.promise(() =>
+      runChat({ copilot, logService, model, logFile, resolver }),
+    );
+  }
 });
 
 runMain(main).catch((err) => {
